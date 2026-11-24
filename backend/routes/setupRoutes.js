@@ -5,12 +5,24 @@
 const express = require('express');
 const { configStatus } = require('../lib/config');
 const { overview } = require('../lib/status');
+const switcher = require('../lib/switcher');
+const { readConfig } = require('../lib/config');
+const { getSetting, setSetting } = require('../lib/settings');
+const perms = require('../lib/permissions');
+const { DEFAULT_SYSTEM } = require('../lib/answer');
 
 const baseName = p => (p || '').split('/').filter(Boolean).pop() || '';
 
 module.exports = function buildSetupRouter(coreApi) {
   const router = express.Router();
   const setupGate = [coreApi.authenticateToken, coreApi.requirePage('setup')];
+  const policyGate = [...setupGate, perms.requirePolicy(coreApi)];
+  const switchGate = [...setupGate, perms.requireSwitch(coreApi)];
+  const wrap = fn => (req, res) => Promise.resolve(fn(req, res)).catch((err) => {
+    if (err.status) return res.status(err.status).json({ error: err.message, code: err.code || null });
+    console.error(`[ai] setup request failed: ${err.code || err.name}`);
+    return res.status(500).json({ error: 'Something went wrong in the AI module.' });
+  });
 
   // GET <api>/ai/setup/status - is the module configured? Answers 403 to a
   // user without the Setup page, which the frontend also uses to decide
@@ -86,6 +98,99 @@ module.exports = function buildSetupRouter(coreApi) {
       res.status(500).json({ error: 'Could not read the model status' });
     }
   });
+
+  // --- switching the model -----------------------------------------------------
+
+  const personLabel = u => `${`${u.first_name || ''} ${u.last_name || ''}`.trim() || u.username} (${u.username})`;
+
+  router.get('/setup/switch', ...setupGate, wrap(async (req, res) => {
+    const cfg = readConfig(coreApi);
+    const s = switcher.state();
+    const load = await switcher.load(cfg);
+    res.json({
+      canSwitch: await perms.canSwitch(coreApi, req.user),
+      canEditPolicy: await perms.isPolicyUser(coreApi, req.user),
+      models: cfg.models,
+      ...s,
+      load
+    });
+  }));
+
+  router.post('/setup/switch', ...switchGate, wrap(async (req, res) => {
+    const { keyword, mode } = req.body || {};
+    await switcher.start(coreApi, { keyword, mode, user: req.user });
+    res.status(202).json(switcher.state());
+  }));
+
+  router.post('/setup/switch/cancel', ...switchGate, wrap(async (req, res) => {
+    switcher.cancel();
+    res.json(switcher.state());
+  }));
+
+  router.get('/setup/switch/log', ...setupGate, wrap(async (req, res) => {
+    const rows = await coreApi.pool.query('SELECT * FROM ai_model_switch_log ORDER BY id DESC LIMIT 50');
+    const people = new Map((await coreApi.listUsers()).map(u => [Number(u.id), personLabel(u)]));
+    const label = kw => (readConfig(coreApi).models.find(m => m.keyword === kw) || { label: kw }).label;
+    const active = switcher.isActive();
+    res.json({
+      log: rows.map((r, i) => ({
+        id: r.id, from: r.from_keyword && label(r.from_keyword), to: label(r.to_keyword), source: r.source,
+        by: r.user_id ? people.get(Number(r.user_id)) || 'a removed user' : null,
+        // "running" with no switch going on: the backend was restarted meanwhile
+        status: r.status === 'running' && !(active && i === 0) ? 'interrupted' : r.status,
+        message: r.message, seconds: r.seconds, startedAt: r.started_at
+      }))
+    });
+  }));
+
+  router.get('/setup/switchers', ...setupGate, wrap(async (req, res) => {
+    const saved = await perms.getSwitchers(coreApi.pool);
+    const roles = (await coreApi.listRoles()).filter(r => !perms.POLICY_ROLES.includes(r));
+    const users = (await coreApi.listUsers()).filter(u => saved.users.includes(Number(u.id)));
+    res.json({
+      always: perms.POLICY_ROLES, roles: saved.roles, users: saved.users, availableRoles: roles,
+      people: users.map(u => ({ id: Number(u.id), label: personLabel(u) })),
+      canEdit: await perms.isPolicyUser(coreApi, req.user)
+    });
+  }));
+
+  router.put('/setup/switchers', ...policyGate, wrap(async (req, res) => {
+    res.json(await perms.saveSwitchers(coreApi, req.body || {}, req.user.id));
+  }));
+
+  // --- per-model answer settings --------------------------------------------------
+
+  const NUMBERS = { temperature: [0, 2], top_p: [0.01, 1], top_k: [1, 1000] };
+
+  router.get('/setup/model-settings', ...setupGate, wrap(async (req, res) => {
+    res.json({
+      settings: await getSetting(coreApi.pool, 'model.settings', {}),
+      defaultSystemPrompt: DEFAULT_SYSTEM,
+      ranges: NUMBERS,
+      models: readConfig(coreApi).models,
+      canEdit: await perms.isPolicyUser(coreApi, req.user)
+    });
+  }));
+
+  router.put('/setup/model-settings/:keyword', ...policyGate, wrap(async (req, res) => {
+    const { keyword } = req.params;
+    if (!readConfig(coreApi).models.some(m => m.keyword === keyword)) return res.status(404).json({ error: 'This model is not offered.' });
+    const body = req.body || {};
+    const clean = {};
+    if (typeof body.systemPrompt === 'string') clean.systemPrompt = body.systemPrompt.slice(0, 8000);
+    for (const [key, [min, max]] of Object.entries(NUMBERS)) {
+      const v = body[key];
+      if (v === null || v === undefined || v === '') continue;
+      if (typeof v !== 'number' || !(v >= min && v <= max) || (key === 'top_k' && !Number.isInteger(v))) {
+        return res.status(400).json({ error: `${key} must be between ${min} and ${max}` });
+      }
+      clean[key] = v;
+    }
+    const all = { ...(await getSetting(coreApi.pool, 'model.settings', {})) };
+    if (Object.keys(clean).length) all[keyword] = clean; else delete all[keyword];
+    await setSetting(coreApi.pool, 'model.settings', all, req.user.id);
+    return res.json({ settings: all });
+  }));
 
   return router;
 };

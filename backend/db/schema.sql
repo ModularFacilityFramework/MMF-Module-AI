@@ -34,3 +34,18 @@ CREATE TABLE IF NOT EXISTS ai_usage (
   KEY idx_ai_usage_created (created_at),
   KEY idx_ai_usage_user (user_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Every change of the loaded model: who, from what, to what, how it ended.
+CREATE TABLE IF NOT EXISTS ai_model_switch_log (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  from_keyword VARCHAR(32) NULL,
+  to_keyword VARCHAR(32) NOT NULL,
+  user_id BIGINT NULL,
+  source VARCHAR(16) NOT NULL,
+  status VARCHAR(16) NOT NULL,
+  message VARCHAR(255) NULL,
+  seconds INT NULL,
+  started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  finished_at TIMESTAMP NULL DEFAULT NULL,
+  KEY idx_ai_switch_started (started_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

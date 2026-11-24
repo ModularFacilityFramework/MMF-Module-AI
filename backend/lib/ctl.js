@@ -10,7 +10,7 @@
 // the user's ssh config and agent are ignored (-F /dev/null, IdentityAgent
 // none), and only public-key auth with that one file is allowed.
 const fs = require('fs');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 
 function sshArgs(cfg, command) {
   const s = cfg.ssh;
@@ -50,19 +50,20 @@ function isReadableFile(p) {
   }
 }
 
+// Why ssh must not be started, or null when it may.
+function problem(cfg) {
+  if (!configured(cfg)) return 'the ai-ctl connection is not configured';
+  if (!isReadableFile(cfg.ssh.keyPath)) return 'the ai-ctl key file is missing or unreadable (MODULE_AI_CTL_SSH_KEY_PATH)';
+  if (!isReadableFile(cfg.ssh.knownHosts)) return 'the known_hosts file is missing or unreadable (MODULE_AI_CTL_SSH_KNOWN_HOSTS)';
+  return null;
+}
+
 // Runs one short ai-ctl command. Never throws: { ok, stdout, error }.
 function run(cfg, command, timeoutMs = 30000) {
   return new Promise(resolve => {
-    if (!configured(cfg)) {
-      resolve({ ok: false, error: 'the ai-ctl connection is not configured' });
-      return;
-    }
-    if (!isReadableFile(cfg.ssh.keyPath)) {
-      resolve({ ok: false, error: 'the ai-ctl key file is missing or unreadable (MODULE_AI_CTL_SSH_KEY_PATH)' });
-      return;
-    }
-    if (!isReadableFile(cfg.ssh.knownHosts)) {
-      resolve({ ok: false, error: 'the known_hosts file is missing or unreadable (MODULE_AI_CTL_SSH_KNOWN_HOSTS)' });
+    const why = problem(cfg);
+    if (why) {
+      resolve({ ok: false, error: why });
       return;
     }
     execFile('ssh', sshArgs(cfg, command), { timeout: timeoutMs, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
@@ -103,4 +104,45 @@ async function info(cfg) {
   }
 }
 
-module.exports = { run, status, info, parseStatus, sshArgs, configured, isReadableFile };
+// Runs a long ai-ctl command and hands over each line as it arrives. Never
+// throws. A timeout only stops listening: the server carries on with a switch.
+function stream(cfg, command, timeoutMs, onLine) {
+  return new Promise(resolve => {
+    const why = problem(cfg);
+    if (why) {
+      resolve({ ok: false, error: why });
+      return;
+    }
+    const child = spawn('ssh', sshArgs(cfg, command), { stdio: ['ignore', 'pipe', 'pipe'] });
+    let buffer = '';
+    let last = '';
+    let errText = '';
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; child.kill(); }, timeoutMs);
+    const take = (line) => {
+      const t = line.trim();
+      if (!t) return;
+      last = t;
+      onLine(t);
+    };
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (d) => {
+      buffer += d;
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+      lines.forEach(take);
+    });
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (d) => { errText = (errText + d).slice(-2000); });
+    child.on('error', (err) => { clearTimeout(timer); resolve({ ok: false, error: err.message }); });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      take(buffer);
+      if (timedOut) resolve({ ok: false, error: 'it took too long' });
+      else if (code === 0) resolve({ ok: true });
+      else resolve({ ok: false, error: last || errText.trim().split('\n').pop() || `exit code ${code}` });
+    });
+  });
+}
+
+module.exports = { run, stream, status, info, parseStatus, sshArgs, configured, isReadableFile };

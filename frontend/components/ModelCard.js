@@ -1,7 +1,9 @@
-// Setup -> Model: what is loaded on the AI server right now, read-only
-// (switching arrives in step G3). Refreshes every 10 s while visible.
+// Setup -> Model: what is loaded on the AI server right now, then switching
+// and the per-model settings. Refreshes every 10 s while visible.
 // Open/closed sections persist per user (ai.setup.modelCard.open).
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import SwitchPanel from './SwitchPanel';
+import ModelSettings from './ModelSettings';
 import * as S from './styles';
 
 const REFRESH_MS = 10000;
@@ -106,6 +108,8 @@ function ModelCard({ coreApi }) {
       {data.controllerError && <div style={S.warningBanner}>The model switcher on the AI server could not be reached: {data.controllerError}</div>}
       {data.vllm && !data.vllm.reachable && <div style={S.warningBanner}>The AI server does not answer: {data.vllm.error}</div>}
 
+      <SwitchPanel coreApi={coreApi} loaded={data.keyword} onFinished={() => load(true)} />
+
       <Section title="Loaded model" open={open.details} onToggle={() => toggle('details')}>
         <div style={S.tableWrapper}>
           <table style={S.table}>
@@ -163,6 +167,10 @@ function ModelCard({ coreApi }) {
           Only one model can be loaded at a time. The server is set to accept conversations of up to{' '}
           {fmtInt(data.vllm && data.vllm.maxModelLen)} tokens, even when a model was trained for longer ones.
         </p>
+      </Section>
+
+      <Section title="How each model answers" open={Boolean(open.settings)} onToggle={() => toggle('settings')}>
+        <ModelSettings coreApi={coreApi} />
       </Section>
 
       <Section title="Technical: how the model was started" open={open.flags} onToggle={() => toggle('flags')}>

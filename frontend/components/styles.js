@@ -74,3 +74,18 @@ export const GREEN = '#28a745';
 export const RED = '#dc3545';
 export const BLUE = '#007bff';
 export const GREY = '#6c757d';
+
+export function button(color, disabled) {
+  return {
+    padding: '5px 12px', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', backgroundColor: color,
+    cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.5 : 1, marginRight: '6px'
+  };
+}
+
+export const field = { padding: '5px 8px', border: '1px solid #ccc', borderRadius: '4px', fontSize: '13px' };
+export const heading = { fontSize: '14px', fontWeight: 600, margin: '20px 0 8px' };
+export const small = { color: '#666', fontSize: '12px' };
+export const successBanner = {
+  padding: '10px 14px', border: '1px solid #28a745', backgroundColor: '#e9f7ec', color: '#1c6b30',
+  borderRadius: '4px', margin: '0 0 15px 0', fontSize: '13px'
+};

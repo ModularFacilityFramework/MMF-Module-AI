@@ -129,8 +129,9 @@ function hold(reason) { holdReason = reason; }
 function release() { holdReason = null; pump(); }
 const held = () => holdReason;
 
-async function stopAll(reason) {
-  await Promise.all([...all.values()].filter(isActive).map(g => stop(g, reason)));
+// Stops what is running; questions still waiting keep their place.
+async function stopRunning(reason) {
+  await Promise.all([...all.values()].filter(g => g.state === 'running').map(g => stop(g, reason)));
 }
 
 // Resolves once nothing is running, or after timeoutMs.
@@ -143,6 +144,6 @@ async function drained(timeoutMs) {
 const get = id => all.get(id) || null;
 
 module.exports = {
-  create, get, add, notice, stop, stopAll, hold, release, held, drained, counts,
+  create, get, add, notice, stop, stopRunning, hold, release, held, drained, counts,
   takeQuestion, activeForUser, activeForChat, isActive
 };

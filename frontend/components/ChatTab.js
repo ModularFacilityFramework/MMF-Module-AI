@@ -19,6 +19,7 @@ const validOpen = v => Boolean(v) && Object.keys(OPEN_DEFAULT).every(k => typeof
 const validIds = v => Array.isArray(v) && v.every(x => typeof x === 'string');
 
 function StatusLine({ status }) {
+  if (status && status.notice) return <div style={S.warningBanner} role="status">{status.notice}</div>;
   if (!status || status.state === 'ready') return null;
   return <div style={S.warningBanner} role="status">{status.message || 'The AI is not available right now.'}</div>;
 }
@@ -82,7 +83,7 @@ function ChatTab({ coreApi }) {
           const res = await api.get('/ai/status');
           if (cancelled) return;
           setStatus(res.data);
-          readyRef.current = res.data.state === 'ready';
+          readyRef.current = res.data.state === 'ready' && !res.data.notice;
         } catch (err) {
           if (cancelled) return;
           setStatus({ state: 'down', message: 'The AI module cannot be reached right now.' });

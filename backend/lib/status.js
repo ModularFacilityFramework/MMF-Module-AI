@@ -8,6 +8,7 @@ const vllm = require('./vllm');
 const ctl = require('./ctl');
 const { readConfig } = require('./config');
 const { getSetting } = require('./settings');
+const switcher = require('./switcher');
 
 const CTL_CACHE_MS = 15000;
 let infoCache = { at: 0, value: null, pending: null };
@@ -50,7 +51,11 @@ async function overview(coreApi, { fresh = false } = {}) {
 
   let state;
   let message;
-  if (controller && controller.switching) {
+  const sw = switcher.state().active;
+  if (sw && sw.phase !== 'waiting') {
+    state = 'switching';
+    message = `The AI is switching to ${sw.toLabel}. This takes about 1-2 minutes. You can keep typing; nothing is lost.`;
+  } else if (controller && controller.switching) {
     state = 'switching';
     message = `The AI is switching to ${labelFor(cfg, controller.keyword)}. This takes about 1-2 minutes.`;
   } else if (snap.reachable && snap.modelId) {
@@ -69,10 +74,19 @@ async function overview(coreApi, { fresh = false } = {}) {
   const keyword = keywordForModelId(snap.modelId, info) || (controller ? controller.keyword : null);
   const model = cfg.models.find(m => m.keyword === keyword) || null;
 
+  // Waiting for running answers to finish before a switch: still usable, but
+  // new questions wait until the new model is ready.
+  let notice = null;
+  if (sw && sw.phase === 'waiting') {
+    notice = `The AI will switch to ${sw.toLabel} as soon as the running answers have finished. New questions wait until then.`;
+  }
+
   const expected = await expectedKeyword(coreApi.pool);
   const changedOutside = Boolean(expected && keyword && state === 'ready' && expected !== keyword);
 
-  return { cfg, state, message, keyword, model, changedOutside, vllm: snap, info, controller };
+  if (changedOutside && !sw) switcher.noteOutside(coreApi.pool, keyword, expected);
+
+  return { cfg, state, message, notice, keyword, model, changedOutside, vllm: snap, info, controller };
 }
 
 // The model MFF last switched to (written by the switch step). Cached, and

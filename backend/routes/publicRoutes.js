@@ -33,6 +33,7 @@ module.exports = function buildPublicRouter(coreApi) {
       res.json({
         state: o.state,
         message: o.message,
+        notice: o.notice || null,
         model: o.model,
         keyword: o.keyword,
         maxModelLen: o.vllm ? o.vllm.maxModelLen : null
