@@ -75,7 +75,7 @@ function Dashboard({ coreApi }) {
   const [activeTab, setActiveTab] = usePageState(`${manifest.id}.dashboard.tab`, 'overview', ALL_TAB_KEYS);
 
   useEffect(() => {
-    api.get('/example/page-access')
+    api.get('/ai/page-access')
       .then(res => setAccess(res.data.access))
       .catch(() => setAccess({}));
   }, [api]);

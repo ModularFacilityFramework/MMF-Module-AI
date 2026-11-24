@@ -16,7 +16,7 @@ module.exports = function buildRouter(coreApi) {
     const conn = await coreApi.pool.getConnection();
     try {
       const roles = await coreApi.listRoles();
-      const rows = await conn.query('SELECT page_key, role FROM example_page_access');
+      const rows = await conn.query('SELECT page_key, role FROM ai_page_access');
       const access = {};
       for (const page of KNOWN_PAGES) access[page.key] = [];
       for (const row of rows) {
@@ -39,12 +39,12 @@ module.exports = function buildRouter(coreApi) {
     try {
       const validRoles = await coreApi.listRoles();
       await conn.beginTransaction();
-      await conn.query('DELETE FROM example_page_access');
+      await conn.query('DELETE FROM ai_page_access');
       for (const page of KNOWN_PAGES) {
         const requestedRoles = Array.isArray(access[page.key]) ? access[page.key] : [];
         for (const role of requestedRoles) {
           if (!validRoles.includes(role)) continue;
-          await conn.query('INSERT INTO example_page_access (page_key, role) VALUES (?, ?)', [page.key, role]);
+          await conn.query('INSERT INTO ai_page_access (page_key, role) VALUES (?, ?)', [page.key, role]);
         }
       }
       await conn.commit();

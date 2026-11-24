@@ -52,7 +52,7 @@ function PageAccessTab({ coreApi }) {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    api.get('/example/page-access')
+    api.get('/ai/page-access')
       .then(res => { setPages(res.data.pages); setRoles(res.data.roles); setSavedAccess(res.data.access); })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
@@ -76,7 +76,7 @@ function PageAccessTab({ coreApi }) {
   function handleSave() {
     setSaving(true);
     setError('');
-    api.put('/example/page-access', { access })
+    api.put('/ai/page-access', { access })
       .then(() => { setSavedAccess(access); resetDraft(); setSaved(true); })
       .catch(err => setError(err.message))
       .finally(() => setSaving(false));

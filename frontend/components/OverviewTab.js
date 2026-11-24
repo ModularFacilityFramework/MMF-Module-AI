@@ -17,7 +17,7 @@ function OverviewTab({ coreApi }) {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    api.get('/example/things')
+    api.get('/ai/things')
       .then(res => setThings(res.data))
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
@@ -28,7 +28,7 @@ function OverviewTab({ coreApi }) {
 
   return (
     <div className={styles.container}>
-      <h3>Example Module</h3>
+      <h3>AI</h3>
       {canManageUsers && <p className={styles.hint}>You have staff-level access in this module.</p>}
       {things.length === 0 ? (
         <p className={styles.empty}>No things yet.</p>

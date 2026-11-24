@@ -1,8 +1,8 @@
 {
-  "name": "mff-module-template",
+  "name": "mff-module-ai",
   "version": "0.1.0",
   "private": true,
-  "description": "Reusable starting point for an MFF-core feature module - clone/copy this per new module, then rename.",
+  "description": "MFF-core feature module ai (AI): local AI.",
   "engines": {
     "node": ">=20.0.0"
   },
