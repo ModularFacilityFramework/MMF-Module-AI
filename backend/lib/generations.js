@@ -87,7 +87,7 @@ function finish(g) {
 function create({ userId, chatId, limits, meta, run, onCancelled }) {
   const g = {
     id: randomUUID(), userId, chatId, limits, meta, run, onCancelled,
-    state: 'queued', position: 0, content: '', reasoning: '', tools: [], notices: [],
+    state: 'queued', position: 0, content: '', reasoning: '', tools: [], files: [], notices: [],
     abort: new AbortController(), stopReason: null, listeners: new Set(), result: null, createdAt: Date.now()
   };
   all.set(g.id, g);

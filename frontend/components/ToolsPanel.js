@@ -6,7 +6,7 @@ import * as S from './styles';
 const text = err => err.response?.data?.error || 'That did not work. Try again.';
 const SHOW = [['all', 'All'], ['installed', 'Installed'], ['catalogue', 'Not installed']];
 const validFilter = v => Boolean(v) && typeof v.search === 'string' && SHOW.some(s => s[0] === v.show);
-const RISK = { 'reads only': S.GREEN, 'reads your MFF data': 'warning', 'reaches the internet': S.RED };
+const RISK = { 'reads only': S.GREEN, 'makes new files': S.BLUE, 'reads your MFF data': 'warning', 'reaches the internet': S.RED };
 
 function ToolCard({ tool, data, act }) {
   return (

@@ -25,6 +25,14 @@ function CopyButton({ text }) {
   return <button type="button" className={css.linkButton} onClick={onClick}>{copied ? 'Copied' : 'Copy'}</button>;
 }
 
+function FileChip({ file, title, onDownload }) {
+  return (
+    <button type="button" className={css.chip} title={title} onClick={() => onDownload(file)}>
+      {file.kind === 'image' ? '🖼️' : '📄'} {file.name} <span className={css.muted}>{fileSize(file.bytes)}</span>
+    </button>
+  );
+}
+
 export function Question({ message, canEdit, onEdit, onDownload }) {
   const [draft, setDraft] = useState(null);
   return (
@@ -34,11 +42,7 @@ export function Question({ message, canEdit, onEdit, onDownload }) {
           {message.text && <div className={css.questionText}>{message.text}</div>}
           {message.files && message.files.length > 0 && (
             <div className={css.chips}>
-              {message.files.map(f => (
-                <button key={f.id} type="button" className={css.chip} title="Download the original file" onClick={() => onDownload(f)}>
-                  {f.kind === 'image' ? '🖼️' : '📄'} {f.name} <span className={css.muted}>{fileSize(f.bytes)}</span>
-                </button>
-              ))}
+              {message.files.map(f => <FileChip key={f.id} file={f} title="Download the original file" onDownload={onDownload} />)}
             </div>
           )}
           <div className={css.messageTools}>
@@ -86,10 +90,12 @@ function Thinking({ message, live, open, onToggle }) {
 function ToolUse({ tools, open, onToggle }) {
   if (!tools || !tools.length) return null;
   const names = [...new Set(tools.map(t => t.name))].join(', ');
+  const failed = tools.filter(t => !t.ok).length;
   return (
     <div className={css.thinking}>
       <button type="button" className={css.thinkingToggle} aria-expanded={open} onClick={onToggle}>
         {open ? '▾' : '▸'} Used {tools.length === 1 ? 'a tool' : `${tools.length} tools`}: {names}
+        {failed > 0 && <span className={css.toolFailed}> {failed === tools.length ? 'did not work' : `${failed} did not work`}</span>}
       </button>
       {open && tools.map((t, i) => (
         // eslint-disable-next-line react/no-array-index-key
@@ -104,7 +110,7 @@ const ENDINGS = {
   length: 'The answer reached the length limit and was cut off. Ask "continue" for more.'
 };
 
-export function Answer({ message, live, thinkingOpen, onToggleThinking, toolsOpen, onToggleTools, canRegenerate, onRegenerate }) {
+export function Answer({ message, live, thinkingOpen, onToggleThinking, toolsOpen, onToggleTools, onDownload, canRegenerate, onRegenerate }) {
   const ending = message.error || ENDINGS[message.status];
   return (
     <div className={css.answer} data-testid="answer">
@@ -117,6 +123,11 @@ export function Answer({ message, live, thinkingOpen, onToggleThinking, toolsOpe
       )}
       {live && !message.content && !message.reasoning && <div className={css.muted}>{message.waiting || 'Reading your question…'} <Elapsed since={message.since} /></div>}
       {live && message.content && <span className={css.cursor} />}
+      {message.files && message.files.length > 0 && (
+        <div className={css.chips}>
+          {message.files.map(f => <FileChip key={f.id} file={f} title="Download this file" onDownload={onDownload} />)}
+        </div>
+      )}
       {(message.notices || []).map(n => <div key={n} className={css.notice}>{n}</div>)}
       {!live && ending && <div className={message.status === 'error' ? css.errorNote : css.notice}>{ending}</div>}
       {message.unsaved && <div className={css.errorNote}>This answer is not saved. Copy it if you need it.</div>}

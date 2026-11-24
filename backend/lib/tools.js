@@ -1,10 +1,12 @@
 // Tools the model may use while answering. Every tool is code in this module:
-// "installing" one only switches it on here, nothing is downloaded. All of them
-// only read, and only what the person asking can already see.
+// "installing" one only switches it on here, nothing is downloaded. They see only
+// what the person asking can already see; the file tools can add new files to
+// that person's own chat, and never change an existing one.
 const fsp = require('fs').promises;
 const storage = require('./storage');
 const { getSetting, setSetting } = require('./settings');
 const calc = require('./calculator');
+const fileTools = require('./fileTools');
 
 const MAX_RESULT_CHARS = 9000;
 
@@ -92,6 +94,92 @@ const CATALOGUE = [
       }
     },
     run: readAttached
+  },
+  {
+    key: 'edit_excel',
+    name: 'Edit Excel file',
+    what: 'Lets the AI change cells in an Excel file you attached and give you the result as a new file. Formatting, charts and the other sheets stay as they were. Your original is never changed.',
+    example: 'In stock.xlsx, set Tris to 120 g and add a row for glycerol.',
+    sees: 'Only the files in the same chat, by the person asking.',
+    risk: 'makes new files',
+    definition: {
+      name: 'edit_excel',
+      description: 'Changes cells of an attached .xlsx file and saves the result as a new file. Use the row numbers and columns shown in the file text. Give all changes of one request in one call.',
+      parameters: {
+        type: 'object',
+        properties: {
+          file: { type: 'string', description: 'The file name' },
+          sheet: { type: 'string', description: 'Sheet name; default the first sheet' },
+          cells: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                cell: { type: 'string', description: 'For example B2' },
+                value: { description: 'New value: a number, text or true/false; empty text clears the cell' },
+                formula: { type: 'string', description: 'A formula instead of a value, for example =SUM(B2:B9)' }
+              },
+              required: ['cell']
+            }
+          }
+        },
+        required: ['file', 'cells']
+      }
+    },
+    run: (args, ctx) => fileTools.edit('xlsx', args, ctx)
+  },
+  {
+    key: 'edit_word',
+    name: 'Edit Word file',
+    what: 'Lets the AI replace or add text in a Word file you attached and give you the result as a new file. Formatting and pictures stay as they were. Your original is never changed.',
+    example: 'In report.docx, replace "HEPES" by "Tris" and add a closing sentence.',
+    sees: 'Only the files in the same chat, by the person asking.',
+    risk: 'makes new files',
+    definition: {
+      name: 'edit_word',
+      description: 'Changes the text of an attached .docx file and saves the result as a new file. Give all changes of one request in one call. "find" must be text exactly as it stands inside one paragraph.',
+      parameters: {
+        type: 'object',
+        properties: {
+          file: { type: 'string', description: 'The file name' },
+          changes: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                find: { type: 'string' }, replace: { type: 'string' },
+                insert_after: { type: 'string', description: 'Text of the paragraph after which to insert a new one' },
+                text: { type: 'string', description: 'The paragraph to insert' },
+                append: { type: 'string', description: 'Text to add at the end of the document' }
+              }
+            }
+          }
+        },
+        required: ['file', 'changes']
+      }
+    },
+    run: (args, ctx) => fileTools.edit('docx', args, ctx)
+  },
+  {
+    key: 'make_file',
+    name: 'Make a file',
+    what: 'Lets the AI give you its answer as a file: Word, Excel, text, CSV or code.',
+    example: 'Put this table in an Excel file.',
+    sees: 'Nothing: it only saves what the AI wrote.',
+    risk: 'makes new files',
+    definition: {
+      name: 'make_file',
+      description: 'Saves text as a new file for the person to download. Use it only when the person asks for a file.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'File name ending in .docx, .xlsx, .txt, .md, .csv, .json, .py, .r or .sh' },
+          content: { type: 'string', description: 'For .docx: text with simple Markdown (# headings, - lists, **bold**). For .xlsx and .csv: comma-separated rows. Otherwise the plain text.' }
+        },
+        required: ['name', 'content']
+      }
+    },
+    run: (args, ctx) => fileTools.make(args, ctx)
   }
 ];
 
@@ -110,6 +198,7 @@ const UNAVAILABLE = [
 async function readAttached(args, ctx) {
   const refs = new Map(); // newest file of each name wins
   for (const m of ctx.history) for (const f of m.files || []) refs.set(f.name, f);
+  for (const f of ctx.created || []) refs.set(f.name, f);
   const names = [...refs.keys()];
   const wanted = String(args.file || '');
   const name = refs.has(wanted) ? wanted : names.find(n => n.toLowerCase() === wanted.toLowerCase());

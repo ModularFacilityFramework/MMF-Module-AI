@@ -13,8 +13,10 @@ const tools = require('./tools');
 const { HttpError } = storage;
 const MAX_TOOL_ROUNDS = 5;
 const MAX_TOOL_CALLS = 12;
+const MAX_CALL_CHARS = 2000;
 const TOOL_PROMPT_OVERHEAD = 500;  // what the chat template adds around tool descriptions
 const TOOL_RESULT_RESERVE = 5000;  // room kept for tool answers
+const TOOL_RULE = 'You have tools. To make or change a file you must call the tool in this answer; never say that a file was made or changed unless its tool call succeeded in this answer.';
 const DEFAULT_SYSTEM = 'You are a helpful assistant for the members of a research facility. Answer clearly and say when you are not sure. Format answers in Markdown.';
 
 // Who may be answered right now? Throws a clear error otherwise.
@@ -53,7 +55,7 @@ function startAnswer(coreApi, { user, root, chatId, think, limits }) {
   async function save(g, record) {
     const message = {
       id: assistantId, role: 'assistant', content: g.content, reasoning: g.reasoning,
-      notices: g.notices, ...(g.tools.length && { tools: g.tools }), at: new Date().toISOString(), ...record
+      notices: g.notices, ...(g.tools.length && { tools: g.tools }), ...(g.files.length && { files: g.files }), at: new Date().toISOString(), ...record
     };
     g.result = { status: record.status, error: record.error || null, message };
     try {
@@ -113,8 +115,8 @@ function startAnswer(coreApi, { user, root, chatId, think, limits }) {
       const toolReserve = available.length
         ? await context.countTokens(o.cfg, o.vllm.modelId, JSON.stringify(toolDefs)) + TOOL_PROMPT_OVERHEAD + TOOL_RESULT_RESERVE : 0;
       const built = await context.build(
-        { cfg: o.cfg, modelId: o.vllm.modelId, root, chatId, vision: caps.includes('vision'), maxModelLen },
-        history, { system, answerReserve: maxTokens + toolReserve });
+        { cfg: o.cfg, modelId: o.vllm.modelId, root, chatId, vision: caps.includes('vision'), maxModelLen, tools: available.length > 0 },
+        history, { system: available.length ? `${system}\n\n${TOOL_RULE}`.trim() : system, answerReserve: maxTokens + toolReserve });
       built.notices.forEach(n => gens.notice(g, n));
       if (g.abort.signal.aborted) throw new Error('aborted');
 
@@ -161,12 +163,16 @@ function startAnswer(coreApi, { user, root, chatId, think, limits }) {
           calls += 1;
           const res = calls > MAX_TOOL_CALLS
             ? { ok: false, text: 'Error: too many tool calls for one answer.' }
-            : await tools.call(available, c.name, c.arguments, { root, chatId, history });
+            : await tools.call(available, c.name, c.arguments, { root, chatId, history, limits, created: g.files });
           let text = res.text;
           const budget = Math.max(200, Math.floor(room * 2)); // characters; about 3 per token
           if (text.length > budget) text = `${text.slice(0, budget)}\n(cut: no more room)`;
           room -= Math.ceil(text.length / 2.5);
-          gens.tool(g, { name: res.label || c.name, args: JSON.stringify(res.args || {}).slice(0, 300), ok: res.ok, result: text.slice(0, 600) });
+          const argsJson = JSON.stringify(res.args || {});
+          gens.tool(g, {
+            fn: c.name, call: argsJson.length <= MAX_CALL_CHARS ? argsJson : '{}', // replayed to the model in later questions
+            name: res.label || c.name, args: argsJson.slice(0, 300), ok: res.ok, result: text.slice(0, 600)
+          });
           body.messages.push({ role: 'tool', tool_call_id: c.id, content: text });
         }
         if (g.abort.signal.aborted) throw new Error('aborted');

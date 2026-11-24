@@ -1,53 +1,7 @@
-// Plain text out of .docx, .xlsx and .pptx files. These are zip files of XML;
-// only the few entries that hold text are unpacked, each with a hard size cap,
-// so a crafted ("zip bomb") file cannot fill the server's memory. Nothing in
-// the file is executed. Runs inside extractWorker.js.
-const zlib = require('zlib');
-
-const ENTRY_MAX = 64 * 1024 * 1024;
-const TOTAL_MAX = 160 * 1024 * 1024;
-
-function openZip(buf) {
-  let eocd = -1;
-  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) {
-    if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
-  }
-  if (eocd < 0) throw new Error('not a valid Office file');
-  const count = buf.readUInt16LE(eocd + 10);
-  let p = buf.readUInt32LE(eocd + 16);
-  const entries = new Map();
-  for (let i = 0; i < count; i++) {
-    if (p + 46 > buf.length || buf.readUInt32LE(p) !== 0x02014b50) break;
-    const nameLen = buf.readUInt16LE(p + 28);
-    const name = buf.toString('utf8', p + 46, p + 46 + nameLen);
-    entries.set(name, { method: buf.readUInt16LE(p + 10), size: buf.readUInt32LE(p + 20), offset: buf.readUInt32LE(p + 42) });
-    p += 46 + nameLen + buf.readUInt16LE(p + 30) + buf.readUInt16LE(p + 32);
-  }
-  let total = 0;
-  return {
-    names: [...entries.keys()],
-    read(name) {
-      const e = entries.get(name);
-      if (!e) return null;
-      if (e.offset + 30 > buf.length || buf.readUInt32LE(e.offset) !== 0x04034b50) throw new Error('not a valid Office file');
-      const start = e.offset + 30 + buf.readUInt16LE(e.offset + 26) + buf.readUInt16LE(e.offset + 28);
-      const raw = buf.subarray(start, start + e.size);
-      let data;
-      if (e.method === 0) data = raw;
-      else if (e.method === 8) {
-        try {
-          data = zlib.inflateRawSync(raw, { maxOutputLength: ENTRY_MAX });
-        } catch (err) {
-          throw new Error(err.code === 'ERR_BUFFER_TOO_LARGE' ? 'it is too large once unpacked' : 'not a valid Office file');
-        }
-      }
-      else throw new Error('unsupported compression in this Office file');
-      total += data.length;
-      if (total > TOTAL_MAX) throw new Error('it is too large once unpacked');
-      return data.toString('utf8');
-    }
-  };
-}
+// Plain text out of .docx, .xlsx and .pptx files (zip files of XML). Only the
+// parts that hold text are unpacked, and nothing in the file is executed. Runs
+// inside extractWorker.js.
+const { openZip } = require('./zip');
 
 const NAMED = { lt: '<', gt: '>', amp: '&', quot: '"', apos: "'" };
 function decode(s) {
@@ -151,4 +105,4 @@ function xlsxText(buf) {
   return out.join('\n\n');
 }
 
-module.exports = { docxText, pptxText, xlsxText };
+module.exports = { docxText, pptxText, xlsxText, decode, attr };

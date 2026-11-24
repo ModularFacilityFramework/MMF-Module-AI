@@ -35,8 +35,12 @@ const fileBlock = (name, text, note) => `\n\n[Attached file: ${name}]${note ? ` 
 // One stored message -> { text parts, images, tokens }
 async function prepare(ctx, m) {
   if (m.role === 'assistant') {
-    const tokens = await countTokens(ctx.cfg, ctx.modelId, m.content || '');
-    return { role: 'assistant', text: m.content || '', files: [], images: [], tokens: tokens + MESSAGE_OVERHEAD };
+    let tokens = await countTokens(ctx.cfg, ctx.modelId, m.content || '') + MESSAGE_OVERHEAD;
+    // Show the tools used earlier as real calls: from the text alone a model
+    // learns to claim that it did something without doing it.
+    const calls = ctx.tools ? (m.tools || []).filter(t => t.fn && t.call).map((t, i) => ({ id: `${m.id.slice(0, 8)}_${i}`, fn: t.fn, args: t.call, result: t.result || '' })) : [];
+    for (const c of calls) tokens += await countTokens(ctx.cfg, ctx.modelId, `${c.fn} ${c.args} ${c.result}`) + 2 * MESSAGE_OVERHEAD;
+    return { role: 'assistant', text: m.content || '', calls, files: [], images: [], tokens };
   }
   const files = [];
   const images = [];
@@ -70,7 +74,21 @@ async function prepare(ctx, m) {
   return { role: 'user', text: m.text, files, images, tokens };
 }
 
+// One prepared message -> the messages sent to the model (a list).
 async function toApi(p) {
+  const out = [];
+  if (p.calls && p.calls.length) {
+    out.push({
+      role: 'assistant', content: '',
+      tool_calls: p.calls.map(c => ({ id: c.id, type: 'function', function: { name: c.fn, arguments: c.args } }))
+    });
+    for (const c of p.calls) out.push({ role: 'tool', tool_call_id: c.id, content: c.result });
+  }
+  out.push(await textAndImages(p));
+  return out;
+}
+
+async function textAndImages(p) {
   const text = p.text + p.files.map(f => fileBlock(f.name, f.text, f.note)).join('');
   if (!p.images.length) return { role: p.role, content: text };
   const parts = [];
@@ -119,7 +137,12 @@ async function shrinkFiles(ctx, p, budget) {
 async function build(ctx, history, { system, answerReserve }) {
   const budget = ctx.maxModelLen - answerReserve - FIXED_OVERHEAD
     - (system ? await countTokens(ctx.cfg, ctx.modelId, system) + MESSAGE_OVERHEAD : 0);
-  const last = await prepare(ctx, history[history.length - 1]);
+  // Files the AI made earlier in this chat are named, so that it can go on
+  // working with them.
+  const made = [...new Set(history.filter(m => m.role === 'assistant').flatMap(m => (m.files || []).map(f => f.name)))];
+  const newest = history[history.length - 1];
+  const last = await prepare(ctx, made.length
+    ? { ...newest, text: `${newest.text}\n\n(Files you made earlier in this conversation: ${made.slice(-10).join(', ')})` } : newest);
   const notices = [];
 
   if (last.tokens > budget) {
@@ -178,7 +201,7 @@ async function build(ctx, history, { system, answerReserve }) {
 
   const messages = [];
   if (system) messages.push({ role: 'system', content: system });
-  for (const p of kept) messages.push(await toApi(p));
+  for (const p of kept) messages.push(...await toApi(p));
   return { messages, notices, promptTokens: used, dropped };
 }
 

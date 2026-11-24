@@ -194,6 +194,7 @@ function Conversation({ coreApi, chatId, limits, status, think, setThink, reason
             key={m.id}
             message={m}
             thinkingOpen={reasoningOpen.includes(m.id)}
+            onDownload={download}
             toolsOpen={reasoningOpen.includes(`tools:${m.id}`)}
             onToggleTools={() => toggleThinking(`tools:${m.id}`)}
             onToggleThinking={() => toggleThinking(m.id)}

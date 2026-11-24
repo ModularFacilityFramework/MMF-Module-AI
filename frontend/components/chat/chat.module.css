@@ -36,6 +36,7 @@
 .errorNote { margin: 6px 0; padding: 6px 10px; border: 1px solid #dc3545; background: #ffeeee; color: #a71d2a; border-radius: 4px; font-size: 12px; }
 .thinking { margin-bottom: 8px; border-left: 3px solid #dee2e6; padding-left: 10px; }
 .thinkingToggle { border: none; background: none; padding: 2px 0; color: #666; font-size: 12px; cursor: pointer; }
+.toolFailed { color: #dc3545; font-weight: 600; }
 .thinkingText { white-space: pre-wrap; overflow-wrap: anywhere; color: #666; font-size: 12px; line-height: 1.5; margin-top: 4px; max-height: 320px; overflow-y: auto; }
 .cursor { display: inline-block; width: 7px; height: 14px; background: #007bff; animation: blink 1s steps(2) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
