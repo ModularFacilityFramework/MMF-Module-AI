@@ -66,3 +66,62 @@ CREATE TABLE IF NOT EXISTS ai_tool_log (
   action VARCHAR(20) NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Benchmark: the questions, the runs, what was measured per model, and the
+-- answers (benchmark questions only, never anyone's chat).
+CREATE TABLE IF NOT EXISTS ai_benchmark_prompts (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  title VARCHAR(100) NOT NULL,
+  kind VARCHAR(10) NOT NULL,
+  prompt MEDIUMTEXT NOT NULL,
+  check_regex VARCHAR(500) NULL,
+  enabled TINYINT NOT NULL DEFAULT 1,
+  deleted TINYINT NOT NULL DEFAULT 0,
+  sort_order INT NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS ai_benchmark_runs (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT NULL,
+  models VARCHAR(255) NOT NULL,
+  think TINYINT NOT NULL DEFAULT 0,
+  status VARCHAR(16) NOT NULL,
+  message VARCHAR(255) NULL,
+  started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  finished_at TIMESTAMP NULL DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS ai_benchmark_models (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  run_id BIGINT NOT NULL,
+  keyword VARCHAR(32) NOT NULL,
+  label VARCHAR(100) NOT NULL,
+  load_seconds INT NULL,
+  gpu_memory_mib INT NULL,
+  kv_cache_tokens INT NULL,
+  max_concurrency DOUBLE NULL,
+  max_model_len INT NULL,
+  KEY idx_ai_bench_models_run (run_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS ai_benchmark_results (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  run_id BIGINT NOT NULL,
+  keyword VARCHAR(32) NOT NULL,
+  prompt_id BIGINT NULL,
+  title VARCHAR(100) NOT NULL,
+  kind VARCHAR(10) NOT NULL,
+  prompt MEDIUMTEXT NOT NULL,
+  status VARCHAR(16) NOT NULL,
+  answer MEDIUMTEXT NULL,
+  reasoning_chars INT NULL,
+  first_ms INT NULL,
+  total_ms INT NULL,
+  prompt_tokens INT NULL,
+  tokens INT NULL,
+  tokens_per_second DOUBLE NULL,
+  auto_pass TINYINT NULL,
+  score TINYINT NULL,
+  scored_by BIGINT NULL,
+  KEY idx_ai_bench_results_run (run_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

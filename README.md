@@ -1,45 +1,28 @@
-# MFF-Module-template
+# MFF-Module-AI
 
-Reusable starting point for an [MFF-core](../mff-core) feature module (chemicals inventory, SLURM monitoring, imaging, booking systems, etc.). Clone or copy this repo per new module, then rename it — see `docs/MFF-Module-template_module-manifest.md`.
+The `ai` module of MFF (display name **AI**): a private chat with the AI model that runs on the facility's own GPU server, and a Setup page to manage it.
 
-## Why this exists
+- **Chat:** conversations, streamed answers with the thinking shown separately, stop, files and images, search. Everything a person writes or uploads stays in that person's own server storage; nothing of it is in the database, so administrators cannot read it through MFF.
+- **Setup** (core page `setup`): Model (what is loaded, switching, per-model settings), Benchmark, Tools, Limits, Usage, Configuration.
 
-MFF-core's own architecture reserves `src/core/<moduleName>/` for modules, but gives no reusable starting point. This template provides one:
+## How it works
 
-- A documented, versioned contract (`coreApi`, see `docs/MFF-Core_module-core-api.md`) — the *only* way a module talks to core, so this repo never imports from an mff-core checkout.
-- Installing means `git clone`-ing this repo directly to `App_frontend/src/core/<id>/` inside a real mff-core checkout (see `docs/MFF-Core_module-database-provisioning.md`) — a real checkout, `git pull`ed in place to update, never a copy or symlink of one. That's mff-core's own decision (its Modules admin page, or a plain `git clone`), not something this repo needs any tooling for.
+The browser talks only to MFF. The backend calls vLLM over HTTP, and switches the model through `ai-ctl` (`tools/gpu6/ai-ctl`), a forced command behind a dedicated SSH key that accepts only `status`, `switch <keyword>` and `info`. All settings come from `coreApi.getModuleConfig()` (`MODULE_AI_*` in core's one `.env`).
 
-## Quick start
+```
+backend/lib/     storage, context, answer, generations (chat) - switcher, ctl, status, vllm (model) -
+                 tools, calculator - benchmark - limits, usage, cleanup - files, officeText (uploads)
+backend/routes/  publicRoutes, chatRoutes, setupRoutes
+backend/db/      schema.sql - the only source of truth for this module's tables (prefix ai_)
+frontend/        Chat tab and Setup tab
+tools/gpu6/      ai-ctl, deployed on the GPU server
+```
+
+## Development
 
 ```bash
-nvm use
-npm install
-npm run lint
+nvm exec 20 npm install
+nvm exec 20 npm run lint
 ```
 
-There is no local dev harness and no `npm run dev`: to run and test the module, `git clone` it into a real mff-core checkout's `App_frontend/src/core/<id>/` (see `docs/MFF-Core_module-database-provisioning.md`).
-
-## Structure
-
-```
-module.manifest.json    # id, label, version, tablePrefix, mountPath - single source of truth
-backend/                 # this module's real Express router + own DB tables
-frontend/                 # this module's real React components
-docs/                       # symlink to mff-core's own docs/ (a shared space core and every
-                            # module link to) - this repo's own docs live there too, prefixed
-                            # MFF-Module-template_*.md: module-manifest.md, install.md,
-                            # dev-setup.md. coreApi/manifest-schema/UI-guide are core's own
-                            # MFF-Core_*.md files in that same shared folder, not duplicated here.
-```
-
-## Page state persistence
-
-Every page, tab and sub-tab must keep its state when the user leaves and comes back, or reloads: selected tab, selected year/project/item, filters, search, sort, open/collapsed sections, and unsaved drafts. Use `coreApi.usePageState(key, defaultValue, validate?)` (returns `[value, setValue, reset]`; per user, survives reload and logout) with keys named `<moduleId>.<page>.<what>`; see "`usePageState`" in `docs/MFF-Core_module-core-api.md`. The template shows both patterns: `frontend/components/Dashboard.js` remembers the selected tab, and `frontend/components/PageAccessTab.js` keeps its unsaved edits as a draft and calls `reset()` after saving. Test leave, return and reload before calling a page finished.
-
-## Renaming this into a real module
-
-See `docs/MFF-Module-template_module-manifest.md`.
-
-## Installing into a real mff-core checkout
-
-How installing/updating actually works is core's own mechanism — see `docs/MFF-Core_module-database-provisioning.md`. `docs/MFF-Module-template_install.md` only covers why this repo has no install script of its own.
+There is no dev server here: the module runs inside a real mff-core checkout. Documentation is in the shared docs repo (`docs/MFF-Module-AI_*.md`).

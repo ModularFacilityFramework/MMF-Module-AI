@@ -3,6 +3,7 @@
 import React from 'react';
 import ModelCard from './ModelCard';
 import ConfigPanel from './ConfigPanel';
+import BenchmarkPanel from './BenchmarkPanel';
 import ToolsPanel from './ToolsPanel';
 import LimitsPanel from './LimitsPanel';
 import UsagePanel from './UsagePanel';
@@ -10,6 +11,7 @@ import * as S from './styles';
 
 const SUBTABS = [
   { key: 'model', label: 'Model' },
+  { key: 'benchmark', label: 'Benchmark' },
   { key: 'tools', label: 'Tools' },
   { key: 'limits', label: 'Limits' },
   { key: 'usage', label: 'Usage' },
@@ -27,6 +29,7 @@ function SetupTab({ coreApi, initialStatus }) {
         ))}
       </div>
       {subtab === 'model' && <ModelCard coreApi={coreApi} />}
+      {subtab === 'benchmark' && <BenchmarkPanel coreApi={coreApi} />}
       {subtab === 'tools' && <ToolsPanel coreApi={coreApi} />}
       {subtab === 'limits' && <LimitsPanel coreApi={coreApi} />}
       {subtab === 'usage' && <UsagePanel coreApi={coreApi} />}

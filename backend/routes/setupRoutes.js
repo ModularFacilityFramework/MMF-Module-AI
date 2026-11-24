@@ -12,6 +12,7 @@ const { LIMITS, DEFAULTS, getLimits, saveLimits } = require('../lib/limits');
 const vllm = require('../lib/vllm');
 const gens = require('../lib/generations');
 const tools = require('../lib/tools');
+const benchmark = require('../lib/benchmark');
 const perms = require('../lib/permissions');
 const { DEFAULT_SYSTEM } = require('../lib/answer');
 
@@ -269,6 +270,79 @@ module.exports = function buildSetupRouter(coreApi) {
 
   router.post('/setup/tools/:key', ...policyGate, wrap(async (req, res) => {
     await tools.change(coreApi, req.params.key, req.body, req.user.id);
+    res.json({ success: true });
+  }));
+
+  // --- benchmark -------------------------------------------------------------------
+
+  const intId = (v) => { const n = Number(v); return Number.isInteger(n) && n > 0 ? n : 0; };
+
+  router.get('/setup/benchmark', ...setupGate, wrap(async (req, res) => {
+    const cfg = readConfig(coreApi);
+    const people = new Map((await coreApi.listUsers()).map(u => [Number(u.id), personLabel(u)]));
+    const runs = await coreApi.pool.query('SELECT * FROM ai_benchmark_runs ORDER BY id DESC LIMIT 50');
+    const active = benchmark.view();
+    const label = kw => (cfg.models.find(m => m.keyword === kw) || { label: kw }).label;
+    res.json({
+      active, models: cfg.models, load: await switcher.load(cfg),
+      canRun: await perms.canSwitch(coreApi, req.user), canEdit: await perms.isPolicyUser(coreApi, req.user),
+      prompts: await benchmark.listPrompts(coreApi.pool),
+      runs: runs.map(r => ({
+        id: Number(r.id), by: people.get(Number(r.user_id)) || null, models: r.models.split(',').map(label), think: Boolean(r.think),
+        status: r.status === 'running' && !(active && active.runId === Number(r.id)) ? 'interrupted' : r.status,
+        message: r.status === 'running' && !(active && active.runId === Number(r.id))
+          ? 'MFF was restarted while it ran. Check on Setup → Model which model is loaded.' : r.message,
+        startedAt: r.started_at, finishedAt: r.finished_at
+      }))
+    });
+  }));
+
+  router.get('/setup/benchmark/runs/:id', ...setupGate, wrap(async (req, res) => {
+    const id = intId(req.params.id);
+    const [models, results] = await Promise.all([
+      coreApi.pool.query('SELECT * FROM ai_benchmark_models WHERE run_id = ? ORDER BY id', [id]),
+      coreApi.pool.query('SELECT * FROM ai_benchmark_results WHERE run_id = ? ORDER BY id', [id])
+    ]);
+    if (!models.length && !results.length) return res.status(404).json({ error: 'This benchmark has no results.' });
+    return res.json({
+      models: models.map(m => ({
+        keyword: m.keyword, label: m.label, loadSeconds: m.load_seconds, gpuMemoryMiB: m.gpu_memory_mib,
+        kvCacheTokens: m.kv_cache_tokens, maxConcurrency: m.max_concurrency, maxModelLen: m.max_model_len
+      })),
+      results: results.map(r => ({
+        id: Number(r.id), keyword: r.keyword, promptId: Number(r.prompt_id), title: r.title, kind: r.kind, prompt: r.prompt, status: r.status,
+        answer: r.answer, firstMs: r.first_ms, totalMs: r.total_ms, promptTokens: r.prompt_tokens, tokens: r.tokens,
+        perSecond: r.tokens_per_second, pass: r.auto_pass === null ? null : Boolean(r.auto_pass), score: r.score
+      }))
+    });
+  }));
+
+  router.post('/setup/benchmark/start', ...switchGate, wrap(async (req, res) => {
+    const { models, think, mode } = req.body || {};
+    const runId = await benchmark.start(coreApi, { user: req.user, keywords: models, think, mode });
+    res.status(202).json({ runId });
+  }));
+
+  router.post('/setup/benchmark/cancel', ...switchGate, wrap(async (req, res) => {
+    benchmark.cancel();
+    res.json({ success: true });
+  }));
+
+  router.put('/setup/benchmark/results/:id/score', ...switchGate, wrap(async (req, res) => {
+    const score = req.body && req.body.score;
+    if (score !== null && !(Number.isInteger(score) && score >= 1 && score <= 5)) return res.status(400).json({ error: 'A score is 1 to 5.' });
+    await coreApi.pool.query('UPDATE ai_benchmark_results SET score = ?, scored_by = ? WHERE id = ?', [score, req.user.id, intId(req.params.id)]);
+    return res.json({ success: true });
+  }));
+
+  router.post('/setup/benchmark/prompts', ...policyGate, wrap(async (req, res) => {
+    res.status(201).json({ id: await benchmark.savePrompt(coreApi.pool, 0, req.body) });
+  }));
+  router.put('/setup/benchmark/prompts/:id', ...policyGate, wrap(async (req, res) => {
+    res.json({ id: await benchmark.savePrompt(coreApi.pool, intId(req.params.id) || -1, req.body) });
+  }));
+  router.delete('/setup/benchmark/prompts/:id', ...policyGate, wrap(async (req, res) => {
+    await benchmark.deletePrompt(coreApi.pool, intId(req.params.id));
     res.json({ success: true });
   }));
 

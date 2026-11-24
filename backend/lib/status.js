@@ -81,10 +81,14 @@ async function overview(coreApi, { fresh = false } = {}) {
     notice = `The AI will switch to ${sw.toLabel} as soon as the running answers have finished. New questions wait until then.`;
   }
 
+  // lazily: benchmark.js uses this file's neighbours
+  const bench = require('./benchmark');
+  if (bench.isRunning()) notice = 'A benchmark of the AI models is running. New questions wait until it has finished, which can take several minutes.';
+
   const expected = await expectedKeyword(coreApi.pool);
   const changedOutside = Boolean(expected && keyword && state === 'ready' && expected !== keyword);
 
-  if (changedOutside && !sw) switcher.noteOutside(coreApi.pool, keyword, expected);
+  if (changedOutside && !sw && !bench.isRunning()) switcher.noteOutside(coreApi.pool, keyword, expected);
 
   return { cfg, state, message, notice, keyword, model, changedOutside, vllm: snap, info, controller };
 }

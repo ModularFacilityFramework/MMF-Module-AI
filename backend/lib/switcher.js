@@ -145,6 +145,7 @@ async function start(coreApi, { keyword, mode, user, purpose = 'mff', keepHold =
   const model = cfg.models.find(m => m.keyword === keyword);
   if (!model) throw new HttpError(400, 'unknown_model', 'This model is not offered.');
   if (!['wait', 'stop'].includes(mode)) throw new HttpError(400, 'bad_mode', 'Choose whether to wait for running answers or stop them.');
+  if (purpose !== 'benchmark' && require('./benchmark').isRunning()) throw new HttpError(409, 'busy', 'A benchmark is running. Cancel it first, or wait.');
   if (current) throw new HttpError(409, 'busy', `A switch to ${current.toLabel} is already under way.`);
   const s = {
     to: keyword, toLabel: model.label, from: null, mode, purpose, by: user ? user.id : null, phase: 'waiting',
