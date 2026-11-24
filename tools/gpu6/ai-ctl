@@ -1,0 +1,197 @@
+#!/usr/bin/python3 -I
+"""ai-ctl - the only thing the MFF `ai` module may run on the AI GPU host.
+
+Installed as an SSH forced command for a dedicated key, e.g. in authorized_keys:
+
+    command="/home/ai/bin/ai-ctl",from="192.168.1.1",restrict ssh-ed25519 AAAA... mff-ai-ctl
+
+The requested command arrives in SSH_ORIGINAL_COMMAND (or argv when run by
+hand). Only these are accepted; anything else is refused and logged:
+
+    status          -> the controller's STATUS line
+    switch <kw>     -> SWITCH <kw>; streams the controller's progress lines.
+                       Exit 0 when the last line starts with "OK", else 1.
+    info            -> one JSON object: controller status, the running
+                       `vllm serve` arguments, the AI GPU's figures, and a
+                       summary of each model folder.
+
+It talks to the vLLM controller's Unix socket and never runs a shell.
+"""
+import glob
+import json
+import os
+import re
+import socket
+import subprocess
+import sys
+import syslog
+
+SOCKET_PATH = "/home/ai/vllm-controller.sock"
+CONTROLLER_SOURCE = "/home/ai/vllm_controller.cpp"
+MODELS_GLOB = "/home/ai/models/llm/*/config.json"
+KEYWORD_RE = re.compile(r"^[a-z0-9_-]{1,32}$")
+
+
+def log(msg):
+    syslog.openlog("ai-ctl")
+    syslog.syslog(syslog.LOG_NOTICE, msg)
+
+
+def refuse(msg, code=2):
+    log("refused: " + msg)
+    print("ERROR " + msg, flush=True)
+    sys.exit(code)
+
+
+def controller(command, stream=False):
+    """Send one command; return the full reply (or stream it to stdout)."""
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        s.connect(SOCKET_PATH)
+    except OSError as e:
+        print("ERROR controller unreachable: %s" % e, flush=True)
+        sys.exit(3)
+    s.sendall((command + "\n").encode())
+    chunks = []
+    while True:
+        data = s.recv(4096)
+        if not data:
+            break
+        text = data.decode(errors="replace")
+        chunks.append(text)
+        if stream:
+            sys.stdout.write(text)
+            sys.stdout.flush()
+    s.close()
+    return "".join(chunks)
+
+
+def vllm_processes():
+    """The `vllm serve` processes of this user, with their argv and env."""
+    found = []
+    uid = os.getuid()
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            if os.stat("/proc/" + pid).st_uid != uid:
+                continue
+            with open("/proc/%s/cmdline" % pid, "rb") as f:
+                argv = [a.decode(errors="replace") for a in f.read().split(b"\0") if a]
+        except OSError:
+            continue
+        if "serve" in argv and any(a.endswith("/vllm") for a in argv):
+            env = {}
+            try:
+                with open("/proc/%s/environ" % pid, "rb") as f:
+                    for item in f.read().split(b"\0"):
+                        if item.startswith(b"CUDA_VISIBLE_DEVICES="):
+                            env["CUDA_VISIBLE_DEVICES"] = item.split(b"=", 1)[1].decode()
+            except OSError:
+                pass
+            i = argv.index("serve")
+            found.append({"pid": int(pid), "args": argv[i + 1:], "env": env})
+    return found
+
+
+def gpu_figures(device):
+    fields = "index,name,uuid,memory.used,memory.total,utilization.gpu,temperature.gpu,power.draw"
+    cmd = ["nvidia-smi", "--query-gpu=" + fields, "--format=csv,noheader,nounits"]
+    if device:
+        cmd += ["-i", device]
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=15).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    rows = []
+    for line in out.strip().splitlines():
+        v = [x.strip() for x in line.split(",")]
+        if len(v) != 8:
+            continue
+
+        def num(x):
+            try:
+                return float(x)
+            except ValueError:
+                return None
+        rows.append({"index": v[0], "name": v[1], "uuid": v[2],
+                     "memory_used_mib": num(v[3]), "memory_total_mib": num(v[4]),
+                     "utilization_pct": num(v[5]), "temperature_c": num(v[6]),
+                     "power_w": num(v[7])})
+    return rows
+
+
+def controller_table():
+    """Best effort: keyword -> model path, read from the controller source."""
+    try:
+        src = open(CONTROLLER_SOURCE).read()
+    except OSError:
+        return {}
+    return dict(re.findall(r'\{"([a-z0-9_-]+)",\s*\{"(/[^"]+)"', src))
+
+
+def model_summaries():
+    out = {}
+    for cfg in sorted(glob.glob(MODELS_GLOB)):
+        folder = os.path.dirname(cfg)
+        try:
+            c = json.load(open(cfg))
+        except (OSError, ValueError):
+            continue
+        tc = c.get("text_config") if isinstance(c.get("text_config"), dict) else c
+        size = 0
+        for f in os.listdir(folder):
+            if f.endswith(".safetensors"):
+                size += os.path.getsize(os.path.join(folder, f))
+        out[folder] = {
+            "architecture": (c.get("architectures") or [None])[0],
+            "model_type": c.get("model_type"),
+            "dtype": c.get("torch_dtype") or c.get("dtype") or tc.get("torch_dtype") or tc.get("dtype"),
+            "quantized": "quantization_config" in c or "quantization_config" in tc,
+            "native_context": tc.get("max_position_embeddings") or c.get("max_position_embeddings"),
+            "layers": tc.get("num_hidden_layers"),
+            "hidden_size": tc.get("hidden_size"),
+            "vision": "vision_config" in c or os.path.exists(os.path.join(folder, "params.json"))
+                      and "vision_encoder" in open(os.path.join(folder, "params.json")).read(),
+            "weights_bytes": size,
+        }
+    return out
+
+
+def info():
+    procs = vllm_processes()
+    device = procs[0]["env"].get("CUDA_VISIBLE_DEVICES") if procs else None
+    print(json.dumps({
+        "controller_status": controller("STATUS").strip(),
+        "vllm": [{"pid": p["pid"], "args": p["args"]} for p in procs],
+        "gpu_device": device,
+        "gpu": gpu_figures(device),
+        "controller_table": controller_table(),
+        "models": model_summaries(),
+    }), flush=True)
+
+
+def main():
+    raw = os.environ.get("SSH_ORIGINAL_COMMAND")
+    if raw is None:
+        raw = " ".join(sys.argv[1:])
+    words = raw.split()
+    if words == ["status"]:
+        print(controller("STATUS").strip(), flush=True)
+    elif len(words) == 2 and words[0] == "switch":
+        kw = words[1]
+        if not KEYWORD_RE.match(kw):
+            refuse("bad model keyword")
+        log("switch %s requested" % kw)
+        reply = controller("SWITCH " + kw, stream=True)
+        last = reply.strip().splitlines()[-1] if reply.strip() else ""
+        log("switch %s finished: %s" % (kw, last))
+        sys.exit(0 if last.startswith("OK") else 1)
+    elif words == ["info"]:
+        info()
+    else:
+        refuse("command not allowed: %r" % raw[:80])
+
+
+if __name__ == "__main__":
+    main()
