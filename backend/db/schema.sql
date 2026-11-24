@@ -49,3 +49,11 @@ CREATE TABLE IF NOT EXISTS ai_model_switch_log (
   finished_at TIMESTAMP NULL DEFAULT NULL,
   KEY idx_ai_switch_started (started_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- People who have used the chat, for the hourly cleanup and the total storage
+-- figure. No names, no content.
+CREATE TABLE IF NOT EXISTS ai_storage_users (
+  user_id BIGINT NOT NULL PRIMARY KEY,
+  used_bytes BIGINT NULL,
+  checked_at TIMESTAMP NULL DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

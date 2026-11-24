@@ -12,6 +12,7 @@ const storage = require('../lib/storage');
 const files = require('../lib/files');
 const gens = require('../lib/generations');
 const { startAnswer, requireReady } = require('../lib/answer');
+const cleanup = require('../lib/cleanup');
 
 const { HttpError } = storage;
 const HEARTBEAT_MS = 15000;
@@ -33,6 +34,7 @@ module.exports = function buildChatRouter(coreApi) {
     try {
       const ws = await coreApi.getUserWorkspacePath(req.user);
       req.aiRoot = await storage.rootForWorkspace(ws, readConfig(coreApi).storageSubdir);
+      cleanup.noteUser(coreApi.pool, req.user.id);
       next();
     } catch (err) { fail(res, err); }
   };

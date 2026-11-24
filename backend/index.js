@@ -8,6 +8,7 @@ const createPool = require('./config/database');
 const buildPublicRouter = require('./routes/publicRoutes');
 const buildChatRouter = require('./routes/chatRoutes');
 const buildSetupRouter = require('./routes/setupRoutes');
+const cleanup = require('./lib/cleanup');
 
 module.exports = function register(coreApi) {
   // This module's own database (credentials from core's .env), shadowing
@@ -17,6 +18,7 @@ module.exports = function register(coreApi) {
   router.use(buildPublicRouter(moduleApi));
   router.use(buildChatRouter(moduleApi));
   router.use(buildSetupRouter(moduleApi));
+  cleanup.schedule(moduleApi);
   return {
     router,
     moduleId: manifest.id,

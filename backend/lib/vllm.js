@@ -39,6 +39,8 @@ function parseMetrics(text) {
   out.running = num('vllm:num_requests_running');
   out.waiting = num('vllm:num_requests_waiting');
   out.kvCacheUsage = num('vllm:kv_cache_usage_perc');
+  const started = text.match(/^process_start_time_seconds\s+([0-9.eE+-]+)/m);
+  out.startedAt = started ? Math.round(Number(started[1]) * 1000) : null;
   out.promptTokensTotal = num('vllm:prompt_tokens_total');
   out.generationTokensTotal = num('vllm:generation_tokens_total');
   const info = text.match(/^vllm:cache_config_info\{([^}]*)\}/m);
@@ -93,13 +95,14 @@ async function tokenize(cfg, modelId, text) {
 }
 
 // Streams one answer. onDelta({ reasoning?, content?, toolCalls? }) is called
-// as text arrives. Aborting the signal closes the connection, which makes
+// as text arrives, onUsage(usage) with the
+// token counts so far. Aborting the signal closes the connection, which makes
 // vLLM stop generating. Returns { finishReason, usage }.
-async function streamChat(cfg, body, { signal, onDelta }) {
+async function streamChat(cfg, body, { signal, onDelta, onUsage }) {
   const res = await fetch(`${cfg.vllmUrl}/v1/chat/completions`, {
     method: 'POST',
     headers: { ...headers(cfg), 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-    body: JSON.stringify({ ...body, stream: true, stream_options: { include_usage: true } }),
+    body: JSON.stringify({ ...body, stream: true, stream_options: { include_usage: true, continuous_usage_stats: true } }),
     signal
   });
   if (!res.ok) {
@@ -119,7 +122,10 @@ async function streamChat(cfg, body, { signal, onDelta }) {
     let chunk;
     try { chunk = JSON.parse(data); } catch (err) { return; }
     if (chunk.error) throw new Error(chunk.error.message || 'vLLM error');
-    if (chunk.usage) out.usage = chunk.usage;
+    if (chunk.usage) {
+      out.usage = chunk.usage;
+      if (onUsage) onUsage(chunk.usage);
+    }
     const choice = chunk.choices && chunk.choices[0];
     if (!choice) return;
     if (choice.finish_reason) out.finishReason = choice.finish_reason;

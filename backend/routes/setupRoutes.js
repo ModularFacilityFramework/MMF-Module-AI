@@ -8,6 +8,9 @@ const { overview } = require('../lib/status');
 const switcher = require('../lib/switcher');
 const { readConfig } = require('../lib/config');
 const { getSetting, setSetting } = require('../lib/settings');
+const { LIMITS, DEFAULTS, getLimits, saveLimits } = require('../lib/limits');
+const vllm = require('../lib/vllm');
+const gens = require('../lib/generations');
 const perms = require('../lib/permissions');
 const { DEFAULT_SYSTEM } = require('../lib/answer');
 
@@ -190,6 +193,55 @@ module.exports = function buildSetupRouter(coreApi) {
     if (Object.keys(clean).length) all[keyword] = clean; else delete all[keyword];
     await setSetting(coreApi.pool, 'model.settings', all, req.user.id);
     return res.json({ settings: all });
+  }));
+
+  // --- limits and usage --------------------------------------------------------
+
+  router.get('/setup/limits', ...setupGate, wrap(async (req, res) => {
+    res.json({
+      values: await getLimits(coreApi.pool), defaults: DEFAULTS,
+      specs: Object.entries(LIMITS).map(([key, s]) => ({ key, min: s.min, max: s.max, unit: s.unit, label: s.label, help: s.help })),
+      canEdit: await perms.isPolicyUser(coreApi, req.user)
+    });
+  }));
+
+  // Body: { key: number, or null for the default }
+  router.put('/setup/limits', ...policyGate, wrap(async (req, res) => {
+    res.json({ values: await saveLimits(coreApi.pool, req.body, req.user.id) });
+  }));
+
+  // Figures only: no names and no text, ever.
+  router.get('/setup/usage', ...setupGate, wrap(async (req, res) => {
+    const days = [1, 7, 30, 90, 365].includes(Number(req.query.days)) ? Number(req.query.days) : 7;
+    const cfg = readConfig(coreApi);
+    const rows = await coreApi.pool.query(
+      `SELECT DATE_FORMAT(created_at, '%Y-%m-%d') AS day, keyword, COUNT(*) AS answers, COUNT(DISTINCT user_id) AS people,
+              CAST(COALESCE(SUM(prompt_tokens), 0) AS DOUBLE) AS prompt_tokens,
+              CAST(COALESCE(SUM(completion_tokens), 0) AS DOUBLE) AS completion_tokens,
+              CAST(AVG(duration_ms) AS DOUBLE) AS avg_ms, CAST(AVG(first_token_ms) AS DOUBLE) AS avg_first_ms,
+              CAST(MAX(queue_ms) AS DOUBLE) AS max_queue_ms,
+              CAST(SUM(status = 'error') AS DOUBLE) AS errors, CAST(SUM(status = 'stopped') AS DOUBLE) AS stopped
+         FROM ai_usage WHERE created_at >= NOW() - INTERVAL ? DAY
+        GROUP BY day, keyword ORDER BY day DESC, keyword`, [days]);
+    const [people] = await coreApi.pool.query('SELECT COUNT(DISTINCT user_id) AS n FROM ai_usage WHERE created_at >= NOW() - INTERVAL ? DAY', [days]);
+    const [disk] = await coreApi.pool.query('SELECT COUNT(*) AS people, CAST(COALESCE(SUM(used_bytes), 0) AS DOUBLE) AS bytes, MAX(checked_at) AS checked FROM ai_storage_users');
+    const snap = await vllm.snapshot(cfg);
+    let server = null;
+    if (snap.metrics && snap.metrics.startedAt) {
+      const [mff] = await coreApi.pool.query(
+        `SELECT CAST(COALESCE(SUM(prompt_tokens), 0) AS DOUBLE) AS p, CAST(COALESCE(SUM(completion_tokens), 0) AS DOUBLE) AS c
+           FROM ai_usage WHERE created_at >= FROM_UNIXTIME(?)`, [Math.floor(snap.metrics.startedAt / 1000)]);
+      server = {
+        since: new Date(snap.metrics.startedAt).toISOString(),
+        read: snap.metrics.promptTokensTotal, written: snap.metrics.generationTokensTotal, mffRead: mff.p, mffWritten: mff.c
+      };
+    }
+    const label = kw => (cfg.models.find(m => m.keyword === kw) || { label: kw || 'no model' }).label;
+    res.json({
+      days, people: Number(people.n), now: gens.counts(),
+      rows: rows.map(r => ({ ...r, answers: Number(r.answers), people: Number(r.people), model: label(r.keyword) })),
+      storage: { people: Number(disk.people), bytes: disk.bytes, checkedAt: disk.checked }, server
+    });
   }));
 
   return router;

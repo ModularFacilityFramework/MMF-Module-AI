@@ -115,6 +115,7 @@ function startAnswer(coreApi, { user, root, chatId, think, limits }) {
       arm(limits.firstTokenTimeoutS, 'The AI did not start answering in time.');
       const r = await vllm.streamChat(o.cfg, body, {
         signal: g.abort.signal,
+        onUsage: (u) => { usage = u; },
         onDelta: (d) => {
           if (!d.reasoning && !d.content) return;
           if (!firstAt) firstAt = Date.now();
@@ -124,7 +125,7 @@ function startAnswer(coreApi, { user, root, chatId, think, limits }) {
           arm(limits.idleTimeoutS, 'The AI stopped in the middle of the answer.');
         }
       });
-      usage = r.usage;
+      usage = r.usage || usage;
       if (r.finishReason === 'length') status = 'length';
       if (!g.reasoning && thinking) {
         const split = splitInlineThinking(g.content);
