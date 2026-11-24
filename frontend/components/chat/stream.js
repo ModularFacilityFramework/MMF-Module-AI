@@ -14,7 +14,8 @@ async function viaEvents(api, id, onEvent, signal) {
   let timer = setTimeout(stop, FIRST_EVENT_MS);
   try {
     const res = await api.get(`/ai/generations/${id}/events`, {
-      adapter: 'fetch', responseType: 'stream', timeout: 0, signal: inner.signal, headers: { Accept: 'text/event-stream' }
+      adapter: 'fetch', responseType: 'stream', timeout: 0, signal: inner.signal, headers: { Accept: 'text/event-stream' },
+      __transientDelays: [] // core's client: no automatic retries here, the polling below takes over at once
     });
     if (!res.data || typeof res.data.getReader !== 'function') return false;
     const reader = res.data.getReader();
