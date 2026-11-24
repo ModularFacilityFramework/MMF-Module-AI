@@ -11,15 +11,25 @@
   },
   "dependencies": {
     "express": "^5.1.0",
-    "mariadb": "^3.4.2"
+    "highlight.js": "^11.12.0",
+    "katex": "^0.19.1",
+    "mariadb": "^3.4.2",
+    "multer": "^2.5.0",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
+    "sharp": "^0.35.5",
+    "unpdf": "^1.7.0"
   },
   "devDependencies": {
-    "react-scripts": "5.0.1",
+    "axios": "^1.12.2",
     "concurrently": "^9.0.0",
     "cross-env": "^7.0.3",
     "eslint": "^8.57.0",
     "eslint-config-react-app": "^7.0.1",
-    "axios": "^1.12.2"
+    "react-scripts": "5.0.1"
   },
   "peerDependencies": {
     "react": "^19.2.0",
@@ -36,5 +46,8 @@
     "react-router-dom": {
       "optional": true
     }
+  },
+  "overrides": {
+    "katex": "$katex"
   }
 }

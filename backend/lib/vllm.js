@@ -1,6 +1,6 @@
-// Read-only client for the vLLM OpenAI-compatible server. Uses Node 20's
-// global fetch. Never throws: every call answers { ok, ... } so callers can
-// show "down" instead of crashing.
+// Client for the vLLM OpenAI-compatible server. Uses Node 20's global fetch.
+// The status calls never throw: they answer { ok, ... } so callers can show
+// "down" instead of crashing. streamChat() throws.
 
 function headers(cfg) {
   const h = { Accept: 'application/json' };
@@ -75,4 +75,67 @@ async function snapshot(cfg) {
   };
 }
 
-module.exports = { snapshot, parseMetrics };
+// Number of tokens in a text, or null when vLLM cannot say.
+async function tokenize(cfg, modelId, text) {
+  try {
+    const res = await fetch(`${cfg.vllmUrl}/tokenize`, {
+      method: 'POST',
+      headers: { ...headers(cfg), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: modelId, prompt: text, add_special_tokens: false }),
+      signal: AbortSignal.timeout(15000)
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return Number.isInteger(data.count) ? data.count : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+// Streams one answer. onDelta({ reasoning?, content?, toolCalls? }) is called
+// as text arrives. Aborting the signal closes the connection, which makes
+// vLLM stop generating. Returns { finishReason, usage }.
+async function streamChat(cfg, body, { signal, onDelta }) {
+  const res = await fetch(`${cfg.vllmUrl}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { ...headers(cfg), 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    body: JSON.stringify({ ...body, stream: true, stream_options: { include_usage: true } }),
+    signal
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    let detail = '';
+    try { detail = JSON.parse(text).error.message; } catch (err) { /* not JSON */ }
+    throw Object.assign(new Error(detail || `HTTP ${res.status}`), { vllmStatus: res.status });
+  }
+  const out = { finishReason: null, usage: null };
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let done = false;
+  const line = (l) => {
+    if (!l.startsWith('data:')) return;
+    const data = l.slice(5).trim();
+    if (data === '[DONE]') { done = true; return; }
+    let chunk;
+    try { chunk = JSON.parse(data); } catch (err) { return; }
+    if (chunk.error) throw new Error(chunk.error.message || 'vLLM error');
+    if (chunk.usage) out.usage = chunk.usage;
+    const choice = chunk.choices && chunk.choices[0];
+    if (!choice) return;
+    if (choice.finish_reason) out.finishReason = choice.finish_reason;
+    const d = choice.delta || {};
+    onDelta({ reasoning: d.reasoning || d.reasoning_content || '', content: d.content || '', toolCalls: d.tool_calls || null });
+  };
+  for await (const part of res.body) {
+    buffer += decoder.decode(part, { stream: true });
+    let nl;
+    while ((nl = buffer.indexOf('\n')) >= 0) {
+      line(buffer.slice(0, nl).replace(/\r$/, ''));
+      buffer = buffer.slice(nl + 1);
+    }
+  }
+  if (!done && !out.finishReason) throw new Error('the connection to the model closed early');
+  return out;
+}
+
+module.exports = { snapshot, parseMetrics, tokenize, streamChat };

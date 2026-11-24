@@ -6,6 +6,7 @@ const express = require('express');
 const manifest = require('../module.manifest.json');
 const createPool = require('./config/database');
 const buildPublicRouter = require('./routes/publicRoutes');
+const buildChatRouter = require('./routes/chatRoutes');
 const buildSetupRouter = require('./routes/setupRoutes');
 
 module.exports = function register(coreApi) {
@@ -14,6 +15,7 @@ module.exports = function register(coreApi) {
   const moduleApi = { ...coreApi, pool: createPool(coreApi) };
   const router = express.Router();
   router.use(buildPublicRouter(moduleApi));
+  router.use(buildChatRouter(moduleApi));
   router.use(buildSetupRouter(moduleApi));
   return {
     router,

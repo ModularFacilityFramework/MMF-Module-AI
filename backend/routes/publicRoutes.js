@@ -4,16 +4,24 @@
 const express = require('express');
 const { readConfig } = require('../lib/config');
 const { overview } = require('../lib/status');
+const { getLimits } = require('../lib/limits');
 
 module.exports = function buildPublicRouter(coreApi) {
   const router = express.Router();
 
   // GET <api>/ai/config - what the chat page needs to draw itself.
-  router.get('/config', coreApi.authenticateToken, (req, res) => {
+  router.get('/config', coreApi.authenticateToken, async (req, res) => {
     const cfg = readConfig(coreApi);
+    const limits = await getLimits(coreApi.pool);
     res.json({
       configured: cfg.missing.length === 0 && cfg.modelErrors.length === 0,
-      models: cfg.models
+      models: cfg.models,
+      limits: {
+        maxPromptKB: limits.maxPromptKB,
+        maxFileMB: limits.maxFileMB,
+        maxImageMB: limits.maxImageMB,
+        maxFilesPerMessage: limits.maxFilesPerMessage
+      }
     });
   });
 
