@@ -40,6 +40,7 @@ function Conversation({ coreApi, chatId, limits, status, think, setThink, reason
       if (e.type === 'snapshot') Object.assign(g, e.generation);
       else if (e.type === 'content' || e.type === 'reasoning') g[e.type] += e.text;
       else if (e.type === 'notice') g.notices = [...g.notices, e.text];
+      else if (e.type === 'tool') g.tools = [...(g.tools || []), e.entry];
       else if (e.type === 'queued') g.position = e.position;
       else if (e.type === 'start') { g.state = 'running'; g.position = 0; }
       else if (e.type === 'done') { g.state = 'finished'; g.result = e.result; }
@@ -164,7 +165,7 @@ function Conversation({ coreApi, chatId, limits, status, think, setThink, reason
   const answering = Boolean(live);
   const ready = status && status.state === 'ready';
   const liveMessage = live && {
-    id: live.assistantId, content: live.content, reasoning: live.reasoning, notices: live.notices, since: live.since,
+    id: live.assistantId, content: live.content, reasoning: live.reasoning, notices: live.notices, tools: live.tools, since: live.since,
     waiting: live.position > 0 ? `Waiting for other answers to finish (position ${live.position})…` : null
   };
   const last = messages && messages[messages.length - 1];
@@ -193,6 +194,8 @@ function Conversation({ coreApi, chatId, limits, status, think, setThink, reason
             key={m.id}
             message={m}
             thinkingOpen={reasoningOpen.includes(m.id)}
+            toolsOpen={reasoningOpen.includes(`tools:${m.id}`)}
+            onToggleTools={() => toggleThinking(`tools:${m.id}`)}
             onToggleThinking={() => toggleThinking(m.id)}
             canRegenerate={!answering && !busy && ready && m === last}
             onRegenerate={regenerate}
@@ -204,6 +207,8 @@ function Conversation({ coreApi, chatId, limits, status, think, setThink, reason
             live
             message={liveMessage}
             thinkingOpen={reasoningOpen.includes(liveMessage.id)}
+            toolsOpen={reasoningOpen.includes(`tools:${liveMessage.id}`)}
+            onToggleTools={() => toggleThinking(`tools:${liveMessage.id}`)}
             onToggleThinking={() => toggleThinking(liveMessage.id)}
           />
         )}

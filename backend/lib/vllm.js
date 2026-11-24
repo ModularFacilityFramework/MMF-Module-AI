@@ -94,10 +94,10 @@ async function tokenize(cfg, modelId, text) {
   }
 }
 
-// Streams one answer. onDelta({ reasoning?, content?, toolCalls? }) is called
+// Streams one answer. onDelta({ reasoning, content, tool }) is called
 // as text arrives, onUsage(usage) with the
 // token counts so far. Aborting the signal closes the connection, which makes
-// vLLM stop generating. Returns { finishReason, usage }.
+// vLLM stop generating. Returns { finishReason, usage, toolCalls }.
 async function streamChat(cfg, body, { signal, onDelta, onUsage }) {
   const res = await fetch(`${cfg.vllmUrl}/v1/chat/completions`, {
     method: 'POST',
@@ -111,7 +111,7 @@ async function streamChat(cfg, body, { signal, onDelta, onUsage }) {
     try { detail = JSON.parse(text).error.message; } catch (err) { /* not JSON */ }
     throw Object.assign(new Error(detail || `HTTP ${res.status}`), { vllmStatus: res.status });
   }
-  const out = { finishReason: null, usage: null };
+  const out = { finishReason: null, usage: null, toolCalls: [] };
   const decoder = new TextDecoder();
   let buffer = '';
   let done = false;
@@ -130,7 +130,14 @@ async function streamChat(cfg, body, { signal, onDelta, onUsage }) {
     if (!choice) return;
     if (choice.finish_reason) out.finishReason = choice.finish_reason;
     const d = choice.delta || {};
-    onDelta({ reasoning: d.reasoning || d.reasoning_content || '', content: d.content || '', toolCalls: d.tool_calls || null });
+    for (const tc of d.tool_calls || []) {
+      const i = Number.isInteger(tc.index) && tc.index >= 0 && tc.index < 20 ? tc.index : 0;
+      const cur = out.toolCalls[i] || (out.toolCalls[i] = { id: '', name: '', arguments: '' });
+      if (tc.id) cur.id = tc.id;
+      if (tc.function && tc.function.name) cur.name = tc.function.name;
+      if (tc.function && tc.function.arguments) cur.arguments += tc.function.arguments;
+    }
+    onDelta({ reasoning: d.reasoning || d.reasoning_content || '', content: d.content || '', tool: Boolean(d.tool_calls) });
   };
   for await (const part of res.body) {
     buffer += decoder.decode(part, { stream: true });
@@ -140,6 +147,7 @@ async function streamChat(cfg, body, { signal, onDelta, onUsage }) {
       buffer = buffer.slice(nl + 1);
     }
   }
+  out.toolCalls = out.toolCalls.filter(t => t && t.name);
   if (!done && !out.finishReason) throw new Error('the connection to the model closed early');
   return out;
 }

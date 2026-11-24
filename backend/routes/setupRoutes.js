@@ -11,6 +11,7 @@ const { getSetting, setSetting } = require('../lib/settings');
 const { LIMITS, DEFAULTS, getLimits, saveLimits } = require('../lib/limits');
 const vllm = require('../lib/vllm');
 const gens = require('../lib/generations');
+const tools = require('../lib/tools');
 const perms = require('../lib/permissions');
 const { DEFAULT_SYSTEM } = require('../lib/answer');
 
@@ -242,6 +243,33 @@ module.exports = function buildSetupRouter(coreApi) {
       rows: rows.map(r => ({ ...r, answers: Number(r.answers), people: Number(r.people), model: label(r.keyword) })),
       storage: { people: Number(disk.people), bytes: disk.bytes, checkedAt: disk.checked }, server
     });
+  }));
+
+  // --- tools -----------------------------------------------------------------------
+
+  router.get('/setup/tools', ...setupGate, wrap(async (req, res) => {
+    const state = await tools.getState(coreApi.pool);
+    const cfg = readConfig(coreApi);
+    const o = await overview(coreApi);
+    const people = new Map((await coreApi.listUsers()).map(u => [Number(u.id), personLabel(u)]));
+    const log = await coreApi.pool.query('SELECT * FROM ai_tool_log ORDER BY id DESC LIMIT 30');
+    res.json({
+      tools: [
+        ...tools.CATALOGUE.map(t => ({ ...tools.card(t), available: true, installed: Boolean(state[t.key]), ...(state[t.key] || {}) })),
+        ...tools.UNAVAILABLE.map(t => ({ ...tools.card(t), available: false, installed: false }))
+      ],
+      capableModels: cfg.models.filter(m => m.capabilities.includes('tools')).map(m => m.label),
+      loadedModel: o.model ? o.model.label : null,
+      loadedCanUse: Boolean(o.model && o.model.capabilities.includes('tools')),
+      roles: await coreApi.listRoles(),
+      canEdit: await perms.isPolicyUser(coreApi, req.user),
+      log: log.map(r => ({ id: r.id, tool: r.tool, action: r.action, at: r.created_at, by: people.get(Number(r.user_id)) || 'a removed user' }))
+    });
+  }));
+
+  router.post('/setup/tools/:key', ...policyGate, wrap(async (req, res) => {
+    await tools.change(coreApi, req.params.key, req.body, req.user.id);
+    res.json({ success: true });
   }));
 
   return router;

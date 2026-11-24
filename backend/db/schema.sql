@@ -57,3 +57,12 @@ CREATE TABLE IF NOT EXISTS ai_storage_users (
   used_bytes BIGINT NULL,
   checked_at TIMESTAMP NULL DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Who installed, removed, enabled or disabled which AI tool.
+CREATE TABLE IF NOT EXISTS ai_tool_log (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT NULL,
+  tool VARCHAR(40) NOT NULL,
+  action VARCHAR(20) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

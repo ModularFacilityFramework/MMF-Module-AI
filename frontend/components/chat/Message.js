@@ -83,16 +83,33 @@ function Thinking({ message, live, open, onToggle }) {
   );
 }
 
+function ToolUse({ tools, open, onToggle }) {
+  if (!tools || !tools.length) return null;
+  const names = [...new Set(tools.map(t => t.name))].join(', ');
+  return (
+    <div className={css.thinking}>
+      <button type="button" className={css.thinkingToggle} aria-expanded={open} onClick={onToggle}>
+        {open ? '▾' : '▸'} Used {tools.length === 1 ? 'a tool' : `${tools.length} tools`}: {names}
+      </button>
+      {open && tools.map((t, i) => (
+        // eslint-disable-next-line react/no-array-index-key
+        <div key={i} className={css.thinkingText}>{t.name} {t.args !== '{}' && t.args}{'\n'}{t.ok ? '→ ' : '✗ '}{t.result}</div>
+      ))}
+    </div>
+  );
+}
+
 const ENDINGS = {
   stopped: 'Stopped.',
   length: 'The answer reached the length limit and was cut off. Ask "continue" for more.'
 };
 
-export function Answer({ message, live, thinkingOpen, onToggleThinking, canRegenerate, onRegenerate }) {
+export function Answer({ message, live, thinkingOpen, onToggleThinking, toolsOpen, onToggleTools, canRegenerate, onRegenerate }) {
   const ending = message.error || ENDINGS[message.status];
   return (
     <div className={css.answer} data-testid="answer">
       <Thinking message={message} live={live} open={thinkingOpen} onToggle={onToggleThinking} />
+      <ToolUse tools={message.tools} open={toolsOpen} onToggle={onToggleTools} />
       {message.content && (
         <Suspense fallback={<div className={css.questionText}>{message.content}</div>}>
           <Markdown text={message.content} />

@@ -42,7 +42,7 @@ module.exports = function buildChatRouter(coreApi) {
 
   const generationInfo = g => g && {
     id: g.id, chatId: g.chatId, state: g.state, position: g.position, assistantId: g.meta.assistantId,
-    model: g.meta.model, content: g.content, reasoning: g.reasoning, notices: g.notices, result: g.result,
+    model: g.meta.model, content: g.content, reasoning: g.reasoning, notices: g.notices, tools: g.tools, result: g.result,
     elapsedMs: Date.now() - g.createdAt
   };
   const listItem = ({ id, title, createdAt, updatedAt, snippet, deletedAt }) => ({

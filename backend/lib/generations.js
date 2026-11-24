@@ -103,6 +103,11 @@ function add(g, kind, text) {
   emit(g, { type: kind, text });
 }
 
+function tool(g, entry) {
+  g.tools.push(entry);
+  emit(g, { type: 'tool', entry });
+}
+
 function notice(g, text) {
   g.notices.push(text);
   emit(g, { type: 'notice', text });
@@ -144,6 +149,6 @@ async function drained(timeoutMs) {
 const get = id => all.get(id) || null;
 
 module.exports = {
-  create, get, add, notice, stop, stopRunning, hold, release, held, drained, counts,
+  create, get, add, tool, notice, stop, stopRunning, hold, release, held, drained, counts,
   takeQuestion, activeForUser, activeForChat, isActive
 };

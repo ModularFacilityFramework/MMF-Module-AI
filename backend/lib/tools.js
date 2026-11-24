@@ -1,0 +1,205 @@
+// Tools the model may use while answering. Every tool is code in this module:
+// "installing" one only switches it on here, nothing is downloaded. All of them
+// only read, and only what the person asking can already see.
+const fsp = require('fs').promises;
+const storage = require('./storage');
+const { getSetting, setSetting } = require('./settings');
+const calc = require('./calculator');
+
+const MAX_RESULT_CHARS = 9000;
+
+// Each entry: plain-language card for Setup, the definition sent to the model,
+// and run(args, ctx) -> text.
+const CATALOGUE = [
+  {
+    key: 'date_time',
+    name: 'Date and time',
+    what: 'Tells the AI today\'s date and the current time. Without it, the AI does not know what day it is.',
+    example: 'How many days are there until 1 March?',
+    sees: 'Only the server\'s clock.',
+    risk: 'reads only',
+    definition: {
+      name: 'date_time',
+      description: 'Current date and time at the facility, and the number of days from today to another date.',
+      parameters: {
+        type: 'object',
+        properties: { date: { type: 'string', description: 'Optional date as YYYY-MM-DD, to get the number of days from today to it.' } }
+      }
+    },
+    run: (args) => {
+      const now = new Date();
+      let out = `Now: ${now.toLocaleString('en-GB', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Europe/London' })} (UK time).`;
+      if (args.date !== undefined) {
+        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(args.date));
+        const target = m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : NaN;
+        if (!m || !Number.isFinite(target) || new Date(target).getUTCDate() !== +m[3]) throw new Error('the date must be a real date as YYYY-MM-DD');
+        const uk = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(now).split('-').map(Number);
+        out += ` Days from today to ${args.date}: ${Math.round((target - Date.UTC(uk[0], uk[1] - 1, uk[2])) / 86400000)}.`;
+      }
+      return out;
+    }
+  },
+  {
+    key: 'calculator',
+    name: 'Calculator',
+    what: 'Does exact arithmetic. AI models often get long calculations wrong; with this they work them out instead of guessing.',
+    example: 'What is 17.5 mg/ml × 0.35 ml divided by 48212 g/mol?',
+    sees: 'Only the numbers the AI types in.',
+    risk: 'reads only',
+    definition: {
+      name: 'calculator',
+      description: 'Evaluates one arithmetic expression exactly. Supports + - * / ^ ( ), scientific notation, pi, e, and sqrt, abs, exp, ln, log10, log2, sin, cos, tan, asin, acos, atan (radians), round, floor, ceil, min, max.',
+      parameters: { type: 'object', properties: { expression: { type: 'string', description: 'For example (17.5*0.35)/48212' } }, required: ['expression'] }
+    },
+    run: args => `${args.expression} = ${calc.evaluate(args.expression)}`
+  },
+  {
+    key: 'unit_converter',
+    name: 'Unit converter',
+    what: 'Converts between units of length, mass, volume, time, temperature, pressure, energy, concentration and angle.',
+    example: 'How many Å are 0.31 nm? What is 4 °C in kelvin?',
+    sees: 'Only the numbers the AI types in.',
+    risk: 'reads only',
+    definition: {
+      name: 'unit_converter',
+      description: `Converts a value between units of the same kind. Units: ${calc.UNIT_NAMES}.`,
+      parameters: {
+        type: 'object',
+        properties: { value: { type: 'number' }, from: { type: 'string' }, to: { type: 'string' } },
+        required: ['value', 'from', 'to']
+      }
+    },
+    run: args => `${args.value} ${args.from} = ${calc.convert(args.value, args.from, args.to)} ${args.to}`
+  },
+  {
+    key: 'read_attached_file',
+    name: 'Read attached file',
+    what: 'Lets the AI look up parts of a long file you attached to the chat, instead of only seeing its beginning.',
+    example: 'In the attached log, what does it say about beamline I24?',
+    sees: 'Only the files attached to the same chat, by the person asking.',
+    risk: 'reads only',
+    definition: {
+      name: 'read_attached_file',
+      description: 'Reads part of a file attached to this conversation, or searches it. Use it when a file was too long to be included completely.',
+      parameters: {
+        type: 'object',
+        properties: {
+          file: { type: 'string', description: 'The file name' },
+          search: { type: 'string', description: 'Optional text to look for (case-insensitive); returns the matching places with their positions.' },
+          start: { type: 'integer', description: 'Optional position (character number) to read from; default 0.' }
+        },
+        required: ['file']
+      }
+    },
+    run: readAttached
+  }
+];
+
+// Shown in the catalogue, but not available.
+const UNAVAILABLE = [
+  {
+    key: 'slurm_jobs', name: 'My SLURM jobs', what: 'Would let the AI look at your own jobs in the SLURM module.', example: 'Why is my last job still pending?',
+    sees: 'Your own jobs, as you.', risk: 'reads your MFF data', needs: 'A connection to the SLURM module, which has not been built yet.'
+  },
+  {
+    key: 'web_search', name: 'Web search', what: 'Would let the AI search the internet.', example: 'What is the newest paper about this enzyme?',
+    sees: 'The words the AI searches for would leave the facility.', risk: 'reaches the internet', needs: 'A search provider and a decision by the facility. Not built.'
+  }
+];
+
+async function readAttached(args, ctx) {
+  const refs = new Map(); // newest file of each name wins
+  for (const m of ctx.history) for (const f of m.files || []) refs.set(f.name, f);
+  const names = [...refs.keys()];
+  const wanted = String(args.file || '');
+  const name = refs.has(wanted) ? wanted : names.find(n => n.toLowerCase() === wanted.toLowerCase());
+  if (!name) throw new Error(names.length ? `there is no such file; attached files: ${names.join(', ')}` : 'no file is attached to this conversation');
+  const meta = await storage.getFileMeta(ctx.root, ctx.chatId, refs.get(name).id);
+  if (meta.kind === 'image') throw new Error('this file is an image and has no text');
+  const text = await fsp.readFile(storage.filePath(ctx.root, ctx.chatId, meta, '.text'), 'utf8');
+  if (args.search) {
+    const needle = String(args.search).toLowerCase();
+    const hay = text.toLowerCase();
+    const found = [];
+    let total = 0;
+    let last = -1000;
+    for (let at = hay.indexOf(needle); at >= 0; at = hay.indexOf(needle, at + needle.length)) {
+      total += 1;
+      if (found.length < 12 && at > last + 400) {
+        found.push(`[at ${at}] …${text.slice(Math.max(0, at - 150), at + needle.length + 350)}…`);
+        last = at;
+      }
+    }
+    return total ? `${total} places in ${name} (${text.length} characters):\n${found.join('\n\n')}` : `"${args.search}" does not occur in ${name}.`;
+  }
+  const start = Math.min(Math.max(0, Math.floor(Number(args.start) || 0)), text.length);
+  const part = text.slice(start, start + MAX_RESULT_CHARS - 300);
+  const end = start + part.length;
+  return `${name}, characters ${start} to ${end} of ${text.length}${end < text.length ? ` (continue with start=${end})` : ' (end of file)'}:\n${part}`;
+}
+
+const byKey = key => CATALOGUE.find(t => t.key === key) || null;
+
+// Saved state: { key: { enabled: boolean, roles: [] } }. Present = installed.
+async function getState(pool) {
+  const s = await getSetting(pool, 'tools', {});
+  return s && typeof s === 'object' ? s : {};
+}
+
+async function audit(pool, userId, key, action) {
+  await pool.query('INSERT INTO ai_tool_log (user_id, tool, action) VALUES (?, ?, ?)', [userId, key, action]);
+}
+
+async function change(coreApi, key, body, userId) {
+  if (!byKey(key)) throw new storage.HttpError(404, 'unknown_tool', 'There is no such tool.');
+  const state = { ...(await getState(coreApi.pool)) };
+  const { action } = body || {};
+  if (action === 'install') {
+    if (state[key]) throw new storage.HttpError(409, 'installed', 'This tool is already installed.');
+    state[key] = { enabled: true, roles: [] };
+  } else {
+    if (!state[key]) throw new storage.HttpError(409, 'not_installed', 'This tool is not installed.');
+    if (action === 'remove') delete state[key];
+    else if (action === 'enable' || action === 'disable') state[key] = { ...state[key], enabled: action === 'enable' };
+    else if (action === 'roles') {
+      const roles = await coreApi.listRoles();
+      state[key] = { ...state[key], roles: [...new Set(Array.isArray(body.roles) ? body.roles : [])].filter(r => roles.includes(r)) };
+    } else throw new storage.HttpError(400, 'bad_action', 'Unknown action.');
+  }
+  await setSetting(coreApi.pool, 'tools', state, userId);
+  await audit(coreApi.pool, userId, key, action);
+  return state;
+}
+
+// The tools this person's question may use, as the model sees them.
+async function forUser(coreApi, user) {
+  const state = await getState(coreApi.pool).catch(() => ({}));
+  const roles = await coreApi.getUserRoles(user);
+  return CATALOGUE.filter((t) => {
+    const s = state[t.key];
+    return s && s.enabled && (!s.roles.length || s.roles.some(r => roles.includes(r)));
+  });
+}
+
+async function call(available, name, rawArgs, ctx) {
+  const tool = available.find(t => t.definition.name === name);
+  if (!tool) return { ok: false, text: `Error: there is no tool "${String(name).slice(0, 60)}".` };
+  let args;
+  try {
+    args = rawArgs ? JSON.parse(rawArgs) : {};
+    if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('not an object');
+  } catch (err) {
+    return { ok: false, text: 'Error: the arguments are not valid JSON.', label: tool.name };
+  }
+  try {
+    const text = String(await tool.run(args, ctx));
+    return { ok: true, text: text.slice(0, MAX_RESULT_CHARS), label: tool.name, args };
+  } catch (err) {
+    const message = err.syscall ? 'the file could not be read' : err.message;
+    return { ok: false, text: `Error: ${String(message).slice(0, 500)}`, label: tool.name, args };
+  }
+}
+
+const card = ({ key, name, what, example, sees, risk, needs }) => ({ key, name, what, example, sees, risk, needs: needs || null });
+
+module.exports = { CATALOGUE, UNAVAILABLE, getState, change, forUser, call, card };

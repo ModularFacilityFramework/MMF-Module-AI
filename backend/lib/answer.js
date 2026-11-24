@@ -8,8 +8,13 @@ const context = require('./context');
 const { overview } = require('./status');
 const { getSetting } = require('./settings');
 const { recordUsage } = require('./usage');
+const tools = require('./tools');
 
 const { HttpError } = storage;
+const MAX_TOOL_ROUNDS = 5;
+const MAX_TOOL_CALLS = 12;
+const TOOL_PROMPT_OVERHEAD = 500;  // what the chat template adds around tool descriptions
+const TOOL_RESULT_RESERVE = 5000;  // room kept for tool answers
 const DEFAULT_SYSTEM = 'You are a helpful assistant for the members of a research facility. Answer clearly and say when you are not sure. Format answers in Markdown.';
 
 // Who may be answered right now? Throws a clear error otherwise.
@@ -48,7 +53,7 @@ function startAnswer(coreApi, { user, root, chatId, think, limits }) {
   async function save(g, record) {
     const message = {
       id: assistantId, role: 'assistant', content: g.content, reasoning: g.reasoning,
-      notices: g.notices, at: new Date().toISOString(), ...record
+      notices: g.notices, ...(g.tools.length && { tools: g.tools }), at: new Date().toISOString(), ...record
     };
     g.result = { status: record.status, error: record.error || null, message };
     try {
@@ -102,9 +107,14 @@ function startAnswer(coreApi, { user, root, chatId, think, limits }) {
       const history = await storage.readMessages(root, chatId);
       while (history.length && history[history.length - 1].role !== 'user') history.pop();
       if (!history.length) throw new HttpError(400, 'no_question', 'There is no question to answer.');
+      // Tools take room too: their descriptions, and what they answer.
+      const available = caps.includes('tools') ? await tools.forUser(coreApi, user) : [];
+      const toolDefs = available.map(t => ({ type: 'function', function: t.definition }));
+      const toolReserve = available.length
+        ? await context.countTokens(o.cfg, o.vllm.modelId, JSON.stringify(toolDefs)) + TOOL_PROMPT_OVERHEAD + TOOL_RESULT_RESERVE : 0;
       const built = await context.build(
         { cfg: o.cfg, modelId: o.vllm.modelId, root, chatId, vision: caps.includes('vision'), maxModelLen },
-        history, { system, answerReserve: maxTokens });
+        history, { system, answerReserve: maxTokens + toolReserve });
       built.notices.forEach(n => gens.notice(g, n));
       if (g.abort.signal.aborted) throw new Error('aborted');
 
@@ -112,21 +122,64 @@ function startAnswer(coreApi, { user, root, chatId, think, limits }) {
       if (canToggle) body.chat_template_kwargs = { enable_thinking: thinking };
       for (const k of ['temperature', 'top_p', 'top_k']) if (typeof perModel[k] === 'number') body[k] = perModel[k];
 
-      arm(limits.firstTokenTimeoutS, 'The AI did not start answering in time.');
-      const r = await vllm.streamChat(o.cfg, body, {
+      if (available.length) body.tools = toolDefs;
+
+      // Usually one round. When the model asks for tools, they are run and the
+      // model is asked again with their results, a limited number of times.
+      let calls = 0;
+      const spent = { completion_tokens: 0 };
+      const handlers = {
         signal: g.abort.signal,
-        onUsage: (u) => { usage = u; },
+        onUsage: (u) => {
+          usage = { prompt_tokens: u.prompt_tokens, completion_tokens: spent.completion_tokens + u.completion_tokens };
+        },
         onDelta: (d) => {
+          arm(limits.idleTimeoutS, 'The AI stopped in the middle of the answer.');
           if (!d.reasoning && !d.content) return;
           if (!firstAt) firstAt = Date.now();
           if (d.content && g.reasoning && !thinkEndAt) thinkEndAt = Date.now();
           gens.add(g, 'reasoning', d.reasoning);
           gens.add(g, 'content', d.content);
-          arm(limits.idleTimeoutS, 'The AI stopped in the middle of the answer.');
         }
-      });
-      usage = r.usage || usage;
-      if (r.finishReason === 'length') status = 'length';
+      };
+      for (let round = 0; ; round++) {
+        arm(limits.firstTokenTimeoutS, 'The AI did not start answering in time.');
+        const r = await vllm.streamChat(o.cfg, body, handlers);
+        if (r.finishReason === 'length') status = 'length';
+        if (!r.toolCalls.length || status === 'length') break;
+        if (!body.tools) break; // a tool call although none were offered: ignore it
+        const last = r.usage || { prompt_tokens: built.promptTokens, completion_tokens: 0 };
+        spent.completion_tokens += last.completion_tokens;
+
+        const wanted = r.toolCalls.map((c, i) => ({ ...c, id: c.id || `call_${round}_${i}` }));
+        body.messages = [...body.messages, {
+          role: 'assistant', content: '',
+          tool_calls: wanted.map(c => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.arguments || '{}' } }))
+        }];
+        let room = maxModelLen - last.prompt_tokens - last.completion_tokens - 1200;
+        for (const c of wanted) {
+          calls += 1;
+          const res = calls > MAX_TOOL_CALLS
+            ? { ok: false, text: 'Error: too many tool calls for one answer.' }
+            : await tools.call(available, c.name, c.arguments, { root, chatId, history });
+          let text = res.text;
+          const budget = Math.max(200, Math.floor(room * 2)); // characters; about 3 per token
+          if (text.length > budget) text = `${text.slice(0, budget)}\n(cut: no more room)`;
+          room -= Math.ceil(text.length / 2.5);
+          gens.tool(g, { name: res.label || c.name, args: JSON.stringify(res.args || {}).slice(0, 300), ok: res.ok, result: text.slice(0, 600) });
+          body.messages.push({ role: 'tool', tool_call_id: c.id, content: text });
+        }
+        if (g.abort.signal.aborted) throw new Error('aborted');
+        body.max_tokens = Math.max(256, Math.min(maxTokens, room));
+        // Last round, or hardly any room left: no more tools, just answer.
+        if (round + 1 >= MAX_TOOL_ROUNDS || room < 2500) {
+          delete body.tools;
+        }
+      }
+      if (!g.content && status === 'done') {
+        status = 'error';
+        error = 'The AI finished without writing an answer. Try "Answer again".';
+      }
       if (!g.reasoning && thinking) {
         const split = splitInlineThinking(g.content);
         if (split) Object.assign(g, split);
