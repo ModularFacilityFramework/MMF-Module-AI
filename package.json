@@ -11,8 +11,7 @@
   },
   "dependencies": {
     "express": "^5.1.0",
-    "mariadb": "^3.4.2",
-    "dotenv": "^16.5.0"
+    "mariadb": "^3.4.2"
   },
   "devDependencies": {
     "react-scripts": "5.0.1",
@@ -28,8 +27,14 @@
     "react-router-dom": "^7.18.2"
   },
   "peerDependenciesMeta": {
-    "react": { "optional": true },
-    "react-dom": { "optional": true },
-    "react-router-dom": { "optional": true }
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    },
+    "react-router-dom": {
+      "optional": true
+    }
   }
 }

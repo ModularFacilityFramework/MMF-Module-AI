@@ -1,9 +1,67 @@
 {
   "id": "ai",
   "label": "AI",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "tablePrefix": "ai_",
   "mountPath": "/ai",
   "backendEntry": "backend/index.js",
-  "frontendEntry": "frontend/index.js"
+  "frontendEntry": "frontend/index.js",
+  "pages": [
+    {
+      "key": "setup",
+      "label": "Setup"
+    }
+  ],
+  "config": [
+    {
+      "key": "VLLM_URL",
+      "required": true,
+      "description": "Base URL of the vLLM server on the AI GPU host, e.g. http://192.168.1.16:8000"
+    },
+    {
+      "key": "VLLM_API_KEY",
+      "description": "Optional. Bearer key for vLLM, only if vLLM was started with --api-key. Leave unset otherwise."
+    },
+    {
+      "key": "CTL_SSH_HOST",
+      "required": true,
+      "description": "AI GPU host running the vLLM controller and ai-ctl, e.g. 192.168.1.16"
+    },
+    {
+      "key": "CTL_SSH_PORT",
+      "description": "Optional. SSH port of the AI GPU host (default 22)."
+    },
+    {
+      "key": "CTL_SSH_USER",
+      "required": true,
+      "description": "Account on the AI GPU host whose authorized_keys holds the ai-ctl forced-command key, e.g. namlb"
+    },
+    {
+      "key": "CTL_SSH_KEY_PATH",
+      "required": true,
+      "description": "Path on this backend host to the private key that may only run ai-ctl (readable by the backend's Unix user only)"
+    },
+    {
+      "key": "CTL_SSH_KNOWN_HOSTS",
+      "required": true,
+      "description": "Path on this backend host to a known_hosts file holding the AI GPU host's key (strict host-key checking)"
+    },
+    {
+      "key": "MODELS",
+      "required": true,
+      "description": "Switchable models: keyword=Label|capabilities, separated by ';'. Keywords must match the controller. Example: qwen=Qwen3.6 27B|vision,thinking,tools;mistral=Mistral Small 3.2 24B|vision;deepseek=DeepSeek R1 Distill Qwen 32B|thinking-r1"
+    },
+    {
+      "key": "STORAGE_SUBDIR",
+      "description": "Optional. Folder inside each user's server storage for chats and uploads (default module-ai)."
+    },
+    {
+      "key": "REQUEST_TIMEOUT_S",
+      "description": "Optional. Seconds to wait for vLLM to connect / send the first byte (default 60)."
+    },
+    {
+      "key": "SWITCH_TIMEOUT_S",
+      "description": "Optional. Seconds to wait for a model switch to finish (default 600)."
+    }
+  ]
 }
