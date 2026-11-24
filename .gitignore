@@ -1,0 +1,22 @@
+node_modules/
+# Written by mff-core's install/update flow at this module's own root - real
+# database credentials for a real installed clone.
+/.env
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.claude/*
+!.claude/settings.json
+*.swp
+*.swo
+coverage/
+*.tmp
+*.temp
+
+# Claude Code files - local to this machine, never committed
+CLAUDE.md
+CLAUDE.local.md
+.claude/
