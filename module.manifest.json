@@ -1,7 +1,7 @@
 {
   "id": "ai",
   "label": "AI",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "tablePrefix": "ai_",
   "mountPath": "/ai",
   "backendEntry": "backend/index.js",
@@ -53,7 +53,7 @@
     },
     {
       "key": "STORAGE_SUBDIR",
-      "description": "Optional. Folder inside each user's server storage for chats and uploads (default module-ai)."
+      "description": "Optional. Folder inside each user's server storage for chats and uploads (default module-AI, following the module-<Name> convention, e.g. module-ABCFold)."
     },
     {
       "key": "REQUEST_TIMEOUT_S",

@@ -62,7 +62,7 @@ function readConfig(coreApi) {
     },
     models,
     modelErrors: errors,
-    storageSubdir: /^[A-Za-z0-9_.-]+$/.test(cfg.STORAGE_SUBDIR || '') ? cfg.STORAGE_SUBDIR : 'module-ai',
+    storageSubdir: /^[A-Za-z0-9_.-]+$/.test(cfg.STORAGE_SUBDIR || '') ? cfg.STORAGE_SUBDIR : 'module-AI',
     requestTimeoutS: positiveInt(cfg.REQUEST_TIMEOUT_S, 60),
     switchTimeoutS: positiveInt(cfg.SWITCH_TIMEOUT_S, 600),
     missing: REQUIRED_KEYS.filter(k => !cfg[k])
