@@ -8,6 +8,7 @@ const { getSetting, setSetting } = require('./settings');
 const calc = require('./calculator');
 const fileTools = require('./fileTools');
 const safety = require('./safety');
+const docs = require('./docs');
 
 const MAX_RESULT_CHARS = 9000;
 
@@ -181,7 +182,8 @@ const CATALOGUE = [
       }
     },
     run: (args, ctx) => fileTools.make(args, ctx)
-  }
+  },
+  ...docs.TOOLS
 ];
 
 // Shown in the catalogue, but not available.
@@ -288,13 +290,13 @@ async function call(available, name, rawArgs, ctx) {
   }
   try {
     const text = String(await tool.run(args, ctx));
-    return { ok: true, text: text.slice(0, MAX_RESULT_CHARS), label: tool.name, args };
+    return { ok: true, text: text.slice(0, MAX_RESULT_CHARS), label: tool.name, args, target: tool.target ? tool.target(args) : null };
   } catch (err) {
     const message = err.syscall ? 'the file could not be read' : err.message;
     return { ok: false, text: `Error: ${String(message).slice(0, 500)}`, label: tool.name, args };
   }
 }
 
-const card = ({ key, name, what, example, sees, risk, needs }) => ({ key, name, what, example, sees, risk, needs: needs || null });
+const card = ({ key, name, what, example, sees, risk, needs, status }) => ({ key, name, what, example, sees, risk, needs: needs || null, status: status || 'tested' });
 
 module.exports = { CATALOGUE, UNAVAILABLE, getState, change, forUser, call, card };

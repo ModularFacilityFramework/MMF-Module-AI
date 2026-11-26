@@ -205,6 +205,7 @@ async function forAnswer(pool, level = 'user') {
   const loadSkill = {
     key: 'load_skill',
     name: 'Load skill',
+    target: args => String(args.name || '').slice(0, 100),
     definition: {
       name: 'load_skill',
       description: 'Loads the full instructions of one skill from the list in the system prompt. Call it before answering when the question matches the skill\'s description, then follow its steps.',
@@ -227,6 +228,7 @@ async function forAnswer(pool, level = 'user') {
   const readSkillFile = {
     key: 'read_skill_file',
     name: 'Read skill file',
+    target: args => `${args.skill || ''}/${args.file || ''}`.slice(0, 100),
     definition: {
       name: 'read_skill_file',
       description: 'Reads a reference file of a skill, as listed by load_skill.',

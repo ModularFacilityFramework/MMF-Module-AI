@@ -16,6 +16,7 @@ const skills = require('../lib/skills');
 const precision = require('../lib/precision');
 const safety = require('../lib/safety');
 const capabilities = require('../lib/capabilities');
+const docs = require('../lib/docs');
 const benchmark = require('../lib/benchmark');
 const perms = require('../lib/permissions');
 const { DEFAULT_SYSTEM } = require('../lib/answer');
@@ -276,7 +277,11 @@ module.exports = function buildSetupRouter(coreApi) {
     const cfg = readConfig(coreApi);
     const o = await overview(coreApi);
     const people = new Map((await coreApi.listUsers()).map(u => [Number(u.id), personLabel(u)]));
-    const log = await coreApi.pool.query('SELECT * FROM ai_tool_log ORDER BY id DESC LIMIT 30');
+    const [log, uses] = await Promise.all([
+      coreApi.pool.query('SELECT * FROM ai_tool_log ORDER BY id DESC LIMIT 30'),
+      coreApi.pool.query('SELECT * FROM ai_tool_use ORDER BY id DESC LIMIT 50')
+    ]);
+    const docList = await docs.overview(coreApi, cfg).catch(() => null);
     res.json({
       tools: [
         ...tools.CATALOGUE.map(t => ({ ...tools.card(t), available: true, installed: Boolean(state[t.key]), ...(state[t.key] || {}) })),
@@ -288,6 +293,12 @@ module.exports = function buildSetupRouter(coreApi) {
       roles: await coreApi.listRoles(),
       canEdit: await perms.isPolicyUser(coreApi, req.user),
       overview: capabilities.TOOLS,
+      docs: docList,
+      docsSource: coreApi.docs ? 'core' : (cfg.docsDir ? 'folder' : null),
+      uses: uses.map(u => ({
+        id: Number(u.id), at: u.created_at, by: people.get(Number(u.user_id)) || 'a removed user', level: u.level,
+        tool: u.tool, target: u.target, ok: Boolean(u.ok), answer: u.answer_id.slice(0, 8)
+      })),
       log: log.map(r => ({ id: r.id, tool: r.tool, action: r.action, at: r.created_at, by: people.get(Number(r.user_id)) || 'a removed user' }))
     });
   }));

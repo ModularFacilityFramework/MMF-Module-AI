@@ -193,3 +193,20 @@ CREATE TABLE IF NOT EXISTS ai_safety_log (
   KEY idx_ai_safety_log_answer (answer_id),
   KEY idx_ai_safety_log_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Every tool use, per answer: which tool, and what it was used on when that is
+-- a shared resource (a doc or skill name). Never the question, the arguments
+-- or the result.
+CREATE TABLE IF NOT EXISTS ai_tool_use (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  answer_id CHAR(36) NOT NULL,
+  user_id BIGINT NULL,
+  level VARCHAR(16) NULL,
+  tool VARCHAR(40) NOT NULL,
+  target VARCHAR(100) NULL,
+  ok TINYINT NOT NULL DEFAULT 1,
+  keyword VARCHAR(32) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_ai_tool_use_answer (answer_id),
+  KEY idx_ai_tool_use_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

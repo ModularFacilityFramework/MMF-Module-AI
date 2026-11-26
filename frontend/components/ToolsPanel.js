@@ -68,6 +68,7 @@ function ToolsPanel({ coreApi }) {
   const [error, setError] = useState('');
   const [filter, setFilter] = usePageState('ai.setup.tools.filter', { search: '', show: 'all' }, validFilter);
   const [logOpen, setLogOpen] = usePageState('ai.setup.tools.logOpen', false, [true, false]);
+  const [open, setOpen] = usePageState('ai.setup.tools.sections', { docs: false, uses: false }, v => Boolean(v) && typeof v.docs === 'boolean' && typeof v.uses === 'boolean');
 
   const load = useCallback(() => api.get('/ai/setup/tools').then(r => setData(r.data)).catch(e => setError(text(e))), [api]);
   useEffect(() => { load(); }, [load]);
@@ -121,7 +122,43 @@ function ToolsPanel({ coreApi }) {
           {catalogue.length ? catalogue.map(t => <ToolCard key={t.key} tool={t} data={data} act={act} />) : <div style={S.empty}>Nothing else{q ? ' that matches' : ''}.</div>}
         </>
       )}
-      <div style={{ ...S.heading, cursor: 'pointer' }} onClick={() => setLogOpen(o => !o)}>{logOpen ? '▾' : '▸'} History</div>
+      <div style={{ ...S.heading, cursor: 'pointer' }} onClick={() => setOpen(o => ({ ...o, docs: !o.docs }))}>
+        {open.docs ? '▾' : '▸'} MFF docs the AI can read{data.docs ? ` (${data.docs.length})` : ''}
+      </div>
+      {open.docs && (!data.docs ? <div style={S.empty}>The docs are not available here: core offers no coreApi.docs and MODULE_AI_DOCS_DIR is not set.</div> : (
+        <div style={{ ...S.tableWrapper, maxHeight: '320px' }}>
+          <table style={S.table}>
+            <thead style={S.thead}><tr><th style={S.th}>Doc</th><th style={S.th}>Area</th><th style={S.th}>For</th><th style={S.th}>What it covers</th></tr></thead>
+            <tbody>
+              {data.docs.map(d => (
+                <tr key={d.name}>
+                  <td style={{ ...S.td, fontFamily: 'monospace', fontSize: '12px' }}>{d.name}</td><td style={S.td}>{d.area}</td>
+                  <td style={S.td}>{{ user: 'everyone', staff: 'facility staff', developer: 'developers' }[d.audience]}</td><td style={{ ...S.td, color: '#666' }}>{d.summary}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+      <div style={{ ...S.heading, cursor: 'pointer' }} onClick={() => setOpen(o => ({ ...o, uses: !o.uses }))}>{open.uses ? '▾' : '▸'} Tools used in answers</div>
+      {open.uses && (data.uses.length ? (
+        <div style={{ ...S.tableWrapper, maxHeight: '320px' }}>
+          <table style={S.table}>
+            <thead style={S.thead}><tr><th style={S.th}>When</th><th style={S.th}>Person</th><th style={S.th}>Tool</th><th style={S.th}>On</th><th style={S.th}>Result</th><th style={S.th}>Answer</th></tr></thead>
+            <tbody>
+              {data.uses.map(u => (
+                <tr key={u.id}>
+                  <td style={S.td}>{new Date(u.at).toLocaleString()}</td><td style={S.td}>{u.by}</td><td style={S.td}>{nameOf(u.tool)}</td>
+                  <td style={{ ...S.td, fontFamily: 'monospace', fontSize: '12px' }}>{u.target || '-'}</td>
+                  <td style={S.td}><span style={S.chip(u.ok ? S.GREEN : S.RED)}>{u.ok ? 'worked' : 'failed'}</span></td>
+                  <td style={{ ...S.td, fontFamily: 'monospace' }}>{u.answer}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : <div style={S.empty}>No tool has been used yet.</div>)}
+      <div style={{ ...S.heading, cursor: 'pointer' }} onClick={() => setLogOpen(o => !o)}>{logOpen ? '▾' : '▸'} History of changes</div>
       {logOpen && (data.log.length
         ? data.log.map(l => <div key={l.id} style={S.small}>{new Date(l.at).toLocaleString()}: {l.by}, {l.action}, {nameOf(l.tool)}</div>)
         : <div style={S.empty}>No changes yet.</div>)}

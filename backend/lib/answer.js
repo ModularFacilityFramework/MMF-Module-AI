@@ -11,6 +11,7 @@ const { recordUsage } = require('./usage');
 const tools = require('./tools');
 const skills = require('./skills');
 const safety = require('./safety');
+const docs = require('./docs');
 
 const { HttpError } = storage;
 const MAX_TOOL_ROUNDS = 5;
@@ -184,7 +185,8 @@ function startAnswer(coreApi, { user, root, chatId, think, limits }) {
       const toolDefs = available.map(t => ({ type: 'function', function: t.definition }));
       const toolReserve = available.length
         ? await context.countTokens(o.cfg, o.vllm.modelId, JSON.stringify(toolDefs)) + TOOL_PROMPT_OVERHEAD + TOOL_RESULT_RESERVE : 0;
-      const fullSystem = [system, available.length ? TOOL_RULE : '', skillSet.prompt].filter(Boolean).join('\n\n').trim();
+      const docsPrompt = docs.PROMPT(available.filter(t => docs.TOOLS.includes(t)).map(t => t.key));
+      const fullSystem = [system, available.length ? TOOL_RULE : '', docsPrompt, skillSet.prompt].filter(Boolean).join('\n\n').trim();
       const built = await context.build(
         { cfg: o.cfg, modelId: o.vllm.modelId, root, chatId, vision: caps.includes('vision'), maxModelLen, tools: available.length > 0 },
         history, { system: fullSystem, answerReserve: maxTokens + toolReserve });
@@ -236,8 +238,13 @@ function startAnswer(coreApi, { user, root, chatId, think, limits }) {
           const res = calls > MAX_TOOL_CALLS
             ? { ok: false, text: 'Error: too many tool calls for one answer.' }
             : await tools.call(available, c.name, c.arguments, {
-              root, chatId, history, limits, created: g.files, pool: coreApi.pool, userId: user.id, answerId: assistantId, keyword
+              root, chatId, history, limits, created: g.files, pool: coreApi.pool, userId: user.id, answerId: assistantId, keyword,
+              coreApi, cfg: o.cfg, level
             });
+          // Every tool use, per answer: the tool and what it was used on (a doc
+          // or skill name), never the question, the arguments or the result.
+          coreApi.pool.query('INSERT INTO ai_tool_use (answer_id, user_id, level, tool, target, ok, keyword) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [assistantId, user.id, level, String(c.name).slice(0, 40), res.target || null, res.ok ? 1 : 0, keyword]).catch(() => {});
           let text = res.text;
           const budget = Math.max(200, Math.floor(room * 2)); // characters; about 3 per token
           if (text.length > budget) text = `${text.slice(0, budget)}\n(cut: no more room)`;

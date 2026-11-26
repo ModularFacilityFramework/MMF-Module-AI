@@ -10,7 +10,7 @@ const TOOLS = [
   { name: 'Edit Word and Excel files, make new files', status: 'tested', note: 'The original is never changed.' },
   { name: 'Skills (load_skill, read_skill_file)', status: 'tested', note: 'Setup -> Skills; tested 26/11/2026.' },
   { name: 'Safety: guard model, scope check, output scan, audience', status: 'tested', note: 'Setup -> Safety; tested 26/11/2026.' },
-  { name: 'MFF docs: index, search and read', status: 'planned', note: 'Next. The AI looks there first for questions about MFF, a module or a procedure.' },
+  { name: 'MFF docs: index, search and read', status: 'tested', note: 'Tools below (MFF docs); tested 26/11/2026. The AI looks there first for questions about MFF, a module or a procedure. Which doc is for whom: INDEX.json in the docs, else user guides for everyone and the rest for developers.' },
   { name: 'My projects in MFF: bookings, samples, data, jobs', status: 'planned', note: 'Own projects only; the project and its members in core decide.' },
   { name: 'Finance: how charges are calculated and the current recovery rates', status: 'planned', note: 'Details (companies, costs, invoices) only for facility staff and developers.' },
   { name: 'Read files from my projects', status: 'planned', note: 'Through core, with the project-membership check in the backend.' },
