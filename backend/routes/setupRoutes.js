@@ -294,7 +294,7 @@ module.exports = function buildSetupRouter(coreApi) {
       canEdit: await perms.isPolicyUser(coreApi, req.user),
       overview: capabilities.TOOLS,
       docs: docList,
-      docsSource: coreApi.docs ? 'core' : (cfg.docsDir ? 'folder' : null),
+      docsSource: await docs.sourceName(coreApi, cfg),
       uses: uses.map(u => ({
         id: Number(u.id), at: u.created_at, by: people.get(Number(u.user_id)) || 'a removed user', level: u.level,
         tool: u.tool, target: u.target, ok: Boolean(u.ok), answer: u.answer_id.slice(0, 8)

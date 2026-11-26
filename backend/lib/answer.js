@@ -181,11 +181,17 @@ function startAnswer(coreApi, { user, root, chatId, think, limits }) {
       const skillSet = caps.includes('tools')
         ? await skills.forAnswer(coreApi.pool, level).catch(() => { console.error('[ai] could not read the skills'); return { prompt: '', tools: [] }; })
         : { prompt: '', tools: [] };
-      const available = caps.includes('tools') ? [...await tools.forUser(coreApi, user, level), ...skillSet.tools] : [];
+      let available = caps.includes('tools') ? [...await tools.forUser(coreApi, user, level), ...skillSet.tools] : [];
+      // Docs tools switched on, but no docs on this server: not offered, and the AI is told so.
+      let docsMissing = false;
+      if (available.some(t => docs.TOOLS.includes(t)) && !(await docs.load(coreApi, o.cfg).catch(() => null))) {
+        available = available.filter(t => !docs.TOOLS.includes(t));
+        docsMissing = true;
+      }
       const toolDefs = available.map(t => ({ type: 'function', function: t.definition }));
       const toolReserve = available.length
         ? await context.countTokens(o.cfg, o.vllm.modelId, JSON.stringify(toolDefs)) + TOOL_PROMPT_OVERHEAD + TOOL_RESULT_RESERVE : 0;
-      const docsPrompt = docs.PROMPT(available.filter(t => docs.TOOLS.includes(t)).map(t => t.key));
+      const docsPrompt = docsMissing ? docs.UNAVAILABLE : docs.PROMPT(available.filter(t => docs.TOOLS.includes(t)).map(t => t.key));
       const fullSystem = [system, available.length ? TOOL_RULE : '', docsPrompt, skillSet.prompt].filter(Boolean).join('\n\n').trim();
       const built = await context.build(
         { cfg: o.cfg, modelId: o.vllm.modelId, root, chatId, vision: caps.includes('vision'), maxModelLen, tools: available.length > 0 },

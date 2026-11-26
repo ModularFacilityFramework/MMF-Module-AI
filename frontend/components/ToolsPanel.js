@@ -123,9 +123,15 @@ function ToolsPanel({ coreApi }) {
         </>
       )}
       <div style={{ ...S.heading, cursor: 'pointer' }} onClick={() => setOpen(o => ({ ...o, docs: !o.docs }))}>
-        {open.docs ? '▾' : '▸'} MFF docs the AI can read{data.docs ? ` (${data.docs.length})` : ''}
+        {open.docs ? '▾' : '▸'} MFF docs the AI can read{data.docs ? ` (${data.docs.length}, from ${data.docsSource === 'core' ? 'core' : 'MODULE_AI_DOCS_DIR'})` : ': not available here'}
       </div>
-      {open.docs && (!data.docs ? <div style={S.empty}>The docs are not available here: core offers no coreApi.docs and MODULE_AI_DOCS_DIR is not set.</div> : (
+      {!data.docs && data.tools.some(t => ['docs_index', 'search_docs', 'read_doc'].includes(t.key) && t.installed) && (
+        <div style={S.warningBanner}>
+          The MFF docs are not available on this server, so the AI cannot look anything up in them and says so when asked.
+          They come from an MFF-docs checkout beside the core checkout (coreApi.docs), or from MODULE_AI_DOCS_DIR.
+        </div>
+      )}
+      {open.docs && (!data.docs ? <div style={S.empty}>The MFF docs are not available on this server: core has no docs (no MFF-docs checkout beside it) and MODULE_AI_DOCS_DIR is not set.</div> : (
         <div style={{ ...S.tableWrapper, maxHeight: '320px' }}>
           <table style={S.table}>
             <thead style={S.thead}><tr><th style={S.th}>Doc</th><th style={S.th}>Area</th><th style={S.th}>For</th><th style={S.th}>What it covers</th></tr></thead>
@@ -133,7 +139,7 @@ function ToolsPanel({ coreApi }) {
               {data.docs.map(d => (
                 <tr key={d.name}>
                   <td style={{ ...S.td, fontFamily: 'monospace', fontSize: '12px' }}>{d.name}</td><td style={S.td}>{d.area}</td>
-                  <td style={S.td}>{{ user: 'everyone', staff: 'facility staff', developer: 'developers' }[d.audience]}</td><td style={{ ...S.td, color: '#666' }}>{d.summary}</td>
+                  <td style={S.td}>{{ user: 'everyone', staff: 'facility staff', developer: 'developers' }[d.audience]}{!d.indexed && <div style={S.small}>not in INDEX.json: default</div>}</td><td style={{ ...S.td, color: '#666' }}>{d.summary}</td>
                 </tr>
               ))}
             </tbody>

@@ -2,13 +2,18 @@
 // search, and read. The AI looks here first for any question about MFF, a
 // module or a procedure (the user's first tool).
 //
-// Where the docs come from: coreApi.docs (list/read) when core offers it, else
-// the folder MODULE_AI_DOCS_DIR. Who may read which doc: INDEX.json in that
-// folder when present ({ "files": { "<name>.md": { "audience": "user"|"staff"|
-// "developer", "summary": "..." } } }); without an entry, only user guides are
-// for everyone and every other doc is for developers (server-wide and admin
-// knowledge is the developers'). The check is made here, for the asker, before
-// any text reaches the model.
+// Where the docs come from: coreApi.docs (core 0.1.219: available/list/read)
+// when it has docs, else the folder MODULE_AI_DOCS_DIR. Where neither has any
+// (production until an MFF-docs checkout is put beside core), the tools are
+// not offered and the AI says the docs are not available on this server.
+//
+// Who may read which doc (the user's rule, 26/11/2026): user guides are for
+// everyone; install, admin, security, server and deployment docs, and any doc
+// not known to be for users, are for facility staff and developers. INDEX.json
+// in MODULE_AI_DOCS_DIR, when present, can set a doc's audience ("user",
+// "staff", "developer"; "developer-admin" = "developer"). The check is made
+// here, for the asker, before any text reaches the model: a doc above the
+// asker's level is never listed, searched or read.
 const fsp = require('fs').promises;
 const path = require('path');
 const safety = require('./safety');
@@ -27,11 +32,18 @@ function PROMPT(keys) {
     + 'and say which doc your answer comes from. If the docs do not cover it, say so instead of guessing.';
 }
 
-function source(coreApi, cfg) {
-  if (coreApi.docs && typeof coreApi.docs.list === 'function' && typeof coreApi.docs.read === 'function') {
-    return { key: 'core', list: () => coreApi.docs.list(), read: name => coreApi.docs.read(name) };
+async function source(coreApi, cfg) {
+  const core = coreApi.docs;
+  if (core && typeof core.list === 'function' && typeof core.read === 'function'
+      && (typeof core.available !== 'function' || await core.available().catch(() => false))) {
+    return {
+      key: 'core',
+      list: async () => (await core.list()) || [],
+      read: async (name) => { const r = await core.read(name); if (!r) throw new Error('gone'); return typeof r === 'string' ? r : r.text; }
+    };
   }
   if (!cfg.docsDir) return null;
+  try { await fsp.access(cfg.docsDir); } catch (err) { return null; }
   return {
     key: `dir:${cfg.docsDir}`,
     list: async () => (await fsp.readdir(cfg.docsDir)).filter(n => NAME_RE.test(n)).map(name => ({ name })),
@@ -39,12 +51,23 @@ function source(coreApi, cfg) {
   };
 }
 
+// INDEX.json, as { files: { name: entry } } or { files: [ { file, ...entry } ] }
+// (the form mff-docs proposed). audience 'developer-admin' means 'developer'.
+// -> { found, entries: { name: { audience, summary } } }
 async function readIndexFile(cfg) {
-  if (!cfg.docsDir) return {};
-  try {
-    const data = JSON.parse(await fsp.readFile(path.join(cfg.docsDir, 'INDEX.json'), 'utf8'));
-    return data && typeof data.files === 'object' ? data.files : {};
-  } catch (err) { return {}; }
+  if (!cfg.docsDir) return { found: false, entries: {} };
+  let data;
+  try { data = JSON.parse(await fsp.readFile(path.join(cfg.docsDir, 'INDEX.json'), 'utf8')); } catch (err) { return { found: false, entries: {} }; }
+  const list = Array.isArray(data) ? data : data && data.files;
+  const entries = {};
+  const add = (name, e) => {
+    if (!name || !e || typeof e !== 'object') return;
+    const audience = e.audience === 'developer-admin' ? 'developer' : e.audience;
+    entries[String(name)] = { audience: safety.LEVELS.includes(audience) ? audience : null, summary: typeof e.summary === 'string' ? e.summary : '' };
+  };
+  if (Array.isArray(list)) list.forEach(e => add(e && (e.file || e.name), e));
+  else if (list && typeof list === 'object') Object.entries(list).forEach(([name, e]) => add(name, e));
+  return { found: true, entries };
 }
 
 // "MFF-Module-AI_safety.md" -> "AI module"; "MFF-Core_api.md" -> "Core"
@@ -75,25 +98,31 @@ function summaryOf(text) {
 
 // All docs with title, area, summary, audience and sections; cached a minute.
 async function load(coreApi, cfg) {
-  const src = source(coreApi, cfg);
+  const src = await source(coreApi, cfg);
   if (!src) return null;
   if (cache.docs && cache.key === src.key && Date.now() - cache.at < CACHE_MS) return cache.docs;
-  const [list, meta] = await Promise.all([src.list(), readIndexFile(cfg)]);
+  const [list, index] = await Promise.all([src.list(), readIndexFile(cfg)]);
+  const meta = index.entries;
   const docs = [];
   for (const { name } of list) {
     if (!NAME_RE.test(name)) continue;
     let text;
     try { text = String(await src.read(name)); } catch (err) { continue; }
     const m = meta[name] || {};
+    // No entry, or no audience in it: user guides are for everyone, the rest
+    // for facility staff and developers.
+    const fallback = /_user-guide\.md$/.test(name) ? 'user' : 'staff';
     const title = ((/^#\s+(.+)$/m.exec(text) || [])[1] || name.replace(/\.md$/, '')).trim();
     docs.push({
       name, title, area: areaOf(name), text,
       summary: m.summary || summaryOf(text),
-      audience: safety.LEVELS.includes(m.audience) ? m.audience : (/_user-guide\.md$/.test(name) ? 'user' : 'developer'),
+      audience: m.audience || fallback,
+      indexed: Boolean(meta[name] && m.audience),
       sections: sections(text)
     });
   }
   docs.sort((a, b) => a.name.localeCompare(b.name));
+  if (!docs.length) return null;
   cache = { at: Date.now(), key: src.key, docs };
   return docs;
 }
@@ -219,9 +248,18 @@ const TOOLS = [
 ];
 
 // For Setup: every doc with its audience (no text).
-async function overview(coreApi, cfg) {
-  const all = await load(coreApi, cfg);
-  return all ? all.map(d => ({ name: d.name, title: d.title, area: d.area, audience: d.audience, chars: d.text.length, summary: d.summary })) : null;
+// Which source the docs come from right now: 'core', 'folder' or null.
+async function sourceName(coreApi, cfg) {
+  const src = await source(coreApi, cfg).catch(() => null);
+  return src ? (src.key === 'core' ? 'core' : 'folder') : null;
 }
 
-module.exports = { TOOLS, PROMPT, overview, forget, load };
+const UNAVAILABLE = 'The MFF docs are not available on this server, so you cannot look anything up in them. '
+  + 'If asked about MFF documentation, say that the docs are not available here.';
+
+async function overview(coreApi, cfg) {
+  const all = await load(coreApi, cfg);
+  return all ? all.map(d => ({ name: d.name, title: d.title, area: d.area, audience: d.audience, indexed: d.indexed, chars: d.text.length, summary: d.summary })) : null;
+}
+
+module.exports = { TOOLS, PROMPT, UNAVAILABLE, overview, sourceName, forget, load };
