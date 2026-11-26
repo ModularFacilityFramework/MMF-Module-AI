@@ -13,6 +13,7 @@ const vllm = require('../lib/vllm');
 const gens = require('../lib/generations');
 const tools = require('../lib/tools');
 const skills = require('../lib/skills');
+const precision = require('../lib/precision');
 const benchmark = require('../lib/benchmark');
 const perms = require('../lib/permissions');
 const { DEFAULT_SYSTEM } = require('../lib/answer');
@@ -48,6 +49,10 @@ module.exports = function buildSetupRouter(coreApi) {
       const vllmProc = infoData && infoData.vllm && infoData.vllm[0];
       const gpu = infoData && Array.isArray(infoData.gpu) ? infoData.gpu[0] : null;
 
+      const contexts = infoData ? infoData.controller_context || {} : {};
+      const loadedSummary = vllmProc ? summaries[vllmProc.args[0]] : null;
+      const variantView = v => ({ key: v.key, label: v.label, context: contexts[v.key] || null });
+
       const catalogue = o.cfg.models.map(m => {
         const path = table[m.keyword];
         const s = path ? summaries[path] : null;
@@ -56,6 +61,7 @@ module.exports = function buildSetupRouter(coreApi) {
           label: m.label,
           capabilities: m.capabilities,
           knownToController: Boolean(path),
+          variants: precision.offered(m.keyword, table).map(variantView),
           folder: path ? baseName(path) : null,
           details: s ? {
             architecture: s.architecture,
@@ -68,13 +74,18 @@ module.exports = function buildSetupRouter(coreApi) {
           } : null
         };
       });
-      const extraOnController = Object.keys(table).filter(kw => !o.cfg.models.some(m => m.keyword === kw));
+      const extraOnController = Object.keys(table).filter(kw => !o.cfg.models.some(m => m.keyword === precision.modelOf(kw)));
 
       res.json({
         state: o.state,
         message: o.message,
         keyword: o.keyword,
         model: o.model,
+        // which precision variant the controller runs, and what is really loaded
+        controllerKeyword: o.controller ? o.controller.keyword : null,
+        variantLabel: o.controller && precision.variant(o.controller.keyword) && precision.offered(o.keyword, table).length
+          ? precision.variant(o.controller.keyword).label : null,
+        precision: precision.live(vllmProc ? vllmProc.args : null, loadedSummary),
         changedOutside: o.changedOutside,
         controller: o.controller ? { state: o.controller.state, keyword: o.controller.keyword, switching: o.controller.switching } : null,
         controllerError: o.info && !o.info.ok ? o.info.error : null,
@@ -112,19 +123,25 @@ module.exports = function buildSetupRouter(coreApi) {
   router.get('/setup/switch', ...setupGate, wrap(async (req, res) => {
     const cfg = readConfig(coreApi);
     const s = switcher.state();
-    const load = await switcher.load(cfg);
+    const [load, o] = await Promise.all([switcher.load(cfg), overview(coreApi)]);
+    const infoData = o.info && o.info.ok ? o.info.data : null;
+    const table = infoData ? infoData.controller_table || {} : {};
+    const contexts = infoData ? infoData.controller_context || {} : {};
     res.json({
       canSwitch: await perms.canSwitch(coreApi, req.user),
       canEditPolicy: await perms.isPolicyUser(coreApi, req.user),
-      models: cfg.models,
+      models: cfg.models.map(m => ({
+        ...m, variants: precision.offered(m.keyword, table).map(v => ({ key: v.key, label: v.label, context: contexts[v.key] || null }))
+      })),
+      loaded: o.controller && o.controller.state === 'running' ? o.controller.keyword : null,
       ...s,
       load
     });
   }));
 
   router.post('/setup/switch', ...switchGate, wrap(async (req, res) => {
-    const { keyword, mode } = req.body || {};
-    await switcher.start(coreApi, { keyword, mode, user: req.user });
+    const { keyword, variant, mode } = req.body || {};
+    await switcher.start(coreApi, { keyword, variant: typeof variant === 'string' && variant ? variant : undefined, mode, user: req.user });
     res.status(202).json(switcher.state());
   }));
 
@@ -136,7 +153,10 @@ module.exports = function buildSetupRouter(coreApi) {
   router.get('/setup/switch/log', ...setupGate, wrap(async (req, res) => {
     const rows = await coreApi.pool.query('SELECT * FROM ai_model_switch_log ORDER BY id DESC LIMIT 50');
     const people = new Map((await coreApi.listUsers()).map(u => [Number(u.id), personLabel(u)]));
-    const label = kw => (readConfig(coreApi).models.find(m => m.keyword === kw) || { label: kw }).label;
+    const label = (kw) => {
+      const m = readConfig(coreApi).models.find(x => x.keyword === precision.modelOf(kw));
+      return m ? precision.label(m.label, kw) : kw;
+    };
     const active = switcher.isActive();
     res.json({
       log: rows.map((r, i) => ({

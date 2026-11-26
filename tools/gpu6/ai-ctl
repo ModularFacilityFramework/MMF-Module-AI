@@ -12,8 +12,12 @@ hand). Only these are accepted; anything else is refused and logged:
     switch <kw>     -> SWITCH <kw>; streams the controller's progress lines.
                        Exit 0 when the last line starts with "OK", else 1.
     info            -> one JSON object: controller status, the running
-                       `vllm serve` arguments, the AI GPU's figures, and a
-                       summary of each model folder.
+                       `vllm serve` arguments, the AI GPU's figures, the
+                       controller's keyword -> model path and --max-model-len
+                       tables, and a summary of each model folder.
+
+The controller's source is kept beside this file (vllm_controller.cpp), as
+installed in /home/ai on the GPU host.
 
 It talks to the vLLM controller's Unix socket and never runs a shell.
 """
@@ -130,6 +134,15 @@ def controller_table():
     return dict(re.findall(r'\{"([a-z0-9_-]+)",\s*\{"(/[^"]+)"', src))
 
 
+def controller_context():
+    """Best effort: keyword -> --max-model-len set in the controller source."""
+    try:
+        src = open(CONTROLLER_SOURCE).read()
+    except OSError:
+        return {}
+    return {kw: int(n) for kw, n in re.findall(r'\{"([a-z0-9_-]+)",\s*\{"/[^"]+",\s*(\d+)', src)}
+
+
 def model_summaries():
     out = {}
     for cfg in sorted(glob.glob(MODELS_GLOB)):
@@ -148,6 +161,7 @@ def model_summaries():
             "model_type": c.get("model_type"),
             "dtype": c.get("torch_dtype") or c.get("dtype") or tc.get("torch_dtype") or tc.get("dtype"),
             "quantized": "quantization_config" in c or "quantization_config" in tc,
+            "quant_method": (c.get("quantization_config") or tc.get("quantization_config") or {}).get("quant_method"),
             "native_context": tc.get("max_position_embeddings") or c.get("max_position_embeddings"),
             "layers": tc.get("num_hidden_layers"),
             "hidden_size": tc.get("hidden_size"),
@@ -167,6 +181,7 @@ def info():
         "gpu_device": device,
         "gpu": gpu_figures(device),
         "controller_table": controller_table(),
+        "controller_context": controller_context(),
         "models": model_summaries(),
     }), flush=True)
 

@@ -9,6 +9,7 @@ const { readConfig } = require('./config');
 const { getLimits } = require('./limits');
 const { setSetting } = require('./settings');
 const { HttpError } = require('./storage');
+const precision = require('./precision');
 
 const READY_WAIT_MS = 180000;
 const OUTSIDE_IDLE_WAIT_MS = 15 * 60000;
@@ -23,7 +24,7 @@ const hidePaths = line => line.replace(/(?:\/[\w.@-]+)+\/([\w.@-]+)/g, '$1');
 // phase: waiting -> switching -> checking -> (finished)
 function state() {
   const view = s => s && {
-    to: s.to, toLabel: s.toLabel, from: s.from, phase: s.phase, mode: s.mode, purpose: s.purpose,
+    to: s.to, target: s.target, toLabel: s.toLabel, from: s.from, phase: s.phase, mode: s.mode, purpose: s.purpose,
     startedAt: s.startedAt, seconds: Math.round((Date.now() - s.startedAt) / 1000),
     lines: s.lines.slice(-40), status: s.status || null, message: s.message || null
   };
@@ -36,7 +37,7 @@ async function log(pool, s) {
   try {
     const r = await pool.query(
       'INSERT INTO ai_model_switch_log (from_keyword, to_keyword, user_id, source, status) VALUES (?, ?, ?, ?, ?)',
-      [s.from, s.to, s.by, s.purpose, 'running']);
+      [s.from, s.target, s.by, s.purpose, 'running']);
     s.logId = r.insertId;
   } catch (err) { /* the log must not stop a switch */ }
 }
@@ -100,7 +101,7 @@ async function perform(coreApi, s) {
     s.phase = 'switching';
     s.switchStartedAt = Date.now();
     bus.emit('change');
-    const r = await ctl.stream(cfg, `switch ${s.to}`, cfg.switchTimeoutS * 1000, (line) => {
+    const r = await ctl.stream(cfg, `switch ${s.target}`, cfg.switchTimeoutS * 1000, (line) => {
       s.lines.push(hidePaths(line));
       bus.emit('change');
     });
@@ -113,7 +114,7 @@ async function perform(coreApi, s) {
     const until = Date.now() + READY_WAIT_MS;
     while (Date.now() < until) {
       const [snap, info] = await Promise.all([vllm.snapshot(cfg), ctl.info(cfg)]);
-      if (snap.reachable && status.keywordForModelId(snap.modelId, info) === s.to) {
+      if (snap.reachable && status.keywordForModelId(snap.modelId, info) === s.to && info.ok && info.controller.keyword === s.target) {
         s.loadSeconds = Math.round((Date.now() - s.switchStartedAt) / 1000);
         s.status = 'done';
         s.message = `Ready after ${s.loadSeconds} seconds.`;
@@ -140,15 +141,19 @@ async function perform(coreApi, s) {
   }
 }
 
-async function start(coreApi, { keyword, mode, user, purpose = 'mff', keepHold = false }) {
+// keyword: the model; variant: the controller keyword of one of its precision
+// variants (precision.js), or nothing for the model's default.
+async function start(coreApi, { keyword, variant, mode, user, purpose = 'mff', keepHold = false }) {
   const cfg = readConfig(coreApi);
   const model = cfg.models.find(m => m.keyword === keyword);
   if (!model) throw new HttpError(400, 'unknown_model', 'This model is not offered.');
+  const target = variant || keyword;
+  if (precision.modelOf(target) !== keyword) throw new HttpError(400, 'unknown_variant', 'This model has no such precision.');
   if (!['wait', 'stop'].includes(mode)) throw new HttpError(400, 'bad_mode', 'Choose whether to wait for running answers or stop them.');
   if (purpose !== 'benchmark' && require('./benchmark').isRunning()) throw new HttpError(409, 'busy', 'A benchmark is running. Cancel it first, or wait.');
   if (current) throw new HttpError(409, 'busy', `A switch to ${current.toLabel} is already under way.`);
   const s = {
-    to: keyword, toLabel: model.label, from: null, mode, purpose, by: user ? user.id : null, phase: 'waiting',
+    to: keyword, target, toLabel: precision.label(model.label, target), from: null, mode, purpose, by: user ? user.id : null, phase: 'waiting',
     startedAt: Date.now(), lines: [], cancelled: false, keepHold
   };
   current = s; // from here on no second switch can start
@@ -157,9 +162,15 @@ async function start(coreApi, { keyword, mode, user, purpose = 'mff', keepHold =
     if (!st.ok) throw new HttpError(502, 'controller', `The model switcher on the AI server could not be reached: ${st.error}`);
     if (st.switching) throw new HttpError(409, 'busy', 'A switch started outside MFF is already under way.');
     s.from = st.keyword;
-    if (st.keyword === keyword) {
+    if (st.keyword === target) {
       const snap = await vllm.snapshot(cfg);
-      if (snap.reachable) throw new HttpError(409, 'already', `${model.label} is already loaded.`);
+      if (snap.reachable) throw new HttpError(409, 'already', `${s.toLabel} is already loaded.`);
+    }
+    if (target !== keyword) {
+      const info = await ctl.info(cfg);
+      if (!info.ok || !precision.offered(keyword, info.data.controller_table).some(v => v.key === target)) {
+        throw new HttpError(400, 'unknown_variant', 'The AI server does not offer this precision.');
+      }
     }
   } catch (err) {
     current = null;

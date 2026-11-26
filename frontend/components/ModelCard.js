@@ -87,7 +87,8 @@ function ModelCard({ coreApi }) {
         <div style={{ flex: 1, fontSize: '15px' }}>
           <span style={S.chip(chip.color)}>{chip.text}</span>{' '}
           <strong>{data.model ? data.model.label : (data.keyword || 'No model')}</strong>
-          {data.keyword && <span style={{ color: '#999', fontSize: '12px' }}> ({data.keyword})</span>}
+          {data.variantLabel && <span> · {data.variantLabel}</span>}
+          {data.keyword && <span style={{ color: '#999', fontSize: '12px' }}> ({data.controllerKeyword || data.keyword})</span>}
         </div>
         <span style={{ color: '#999', fontSize: '11px', marginRight: '8px' }}>
           checked {new Date(data.checkedAt).toLocaleTimeString()}
@@ -108,7 +109,7 @@ function ModelCard({ coreApi }) {
       {data.controllerError && <div style={S.warningBanner}>The model switcher on the AI server could not be reached: {data.controllerError}</div>}
       {data.vllm && !data.vllm.reachable && <div style={S.warningBanner}>The AI server does not answer: {data.vllm.error}</div>}
 
-      <SwitchPanel coreApi={coreApi} loaded={data.keyword} onFinished={() => load(true)} />
+      <SwitchPanel coreApi={coreApi} loaded={data.controllerKeyword || data.keyword} onFinished={() => load(true)} />
 
       <Section title="Loaded model" open={open.details} onToggle={() => toggle('details')}>
         <div style={S.tableWrapper}>
@@ -119,6 +120,7 @@ function ModelCard({ coreApi }) {
                   ? data.model.capabilities.map(c => CAPABILITY_TEXT[c] || c).join('; ')
                   : 'text only'}
               </Row>
+              <Row label="Precision">{data.precision ? `${data.precision.weights} weights, ${data.precision.kv} KV cache` : '-'}</Row>
               <Row label="Longest conversation it accepts">{fmtInt(data.vllm && data.vllm.maxModelLen)} tokens (about {fmtInt(data.vllm && data.vllm.maxModelLen ? data.vllm.maxModelLen * 0.75 : null)} words)</Row>
               <Row label="Model design">{loaded && loaded.details ? `${loaded.details.architecture}, ${loaded.details.layers} layers, ${loaded.details.dtype}${loaded.details.quantized ? ', compressed' : ', not compressed'}` : '-'}</Row>
               <Row label="Size of its files">{loaded && loaded.details ? `${loaded.details.weightsGB} GB` : '-'}</Row>
@@ -152,6 +154,11 @@ function ModelCard({ coreApi }) {
                   <td style={S.td}>
                     {c.keyword === data.keyword ? <span style={S.chip(S.GREEN)}>loaded</span> : null}
                     {!c.knownToController && <span style={S.chip(S.RED)}>unknown to the server</span>}
+                    {c.variants && c.variants.length > 0 && (
+                      <div style={S.small}>
+                        Precisions: {c.variants.map(v => `${v.label}${v.context ? ` (${fmtInt(v.context)} tokens)` : ''}`).join('; ')}
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -164,8 +171,9 @@ function ModelCard({ coreApi }) {
           </p>
         )}
         <p style={{ ...S.paragraph, fontSize: '13px' }}>
-          Only one model can be loaded at a time. The server is set to accept conversations of up to{' '}
-          {fmtInt(data.vllm && data.vllm.maxModelLen)} tokens, even when a model was trained for longer ones.
+          Only one model can be loaded at a time. The loaded model accepts conversations of up to{' '}
+          {fmtInt(data.vllm && data.vllm.maxModelLen)} tokens. Qwen can also be loaded with FP8 numbers (smaller, so longer
+          conversations fit); the choice is made when switching.
         </p>
       </Section>
 

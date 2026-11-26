@@ -7,6 +7,7 @@ const vllm = require('./vllm');
 const ctl = require('./ctl');
 const { readConfig } = require('./config');
 const { HttpError } = require('./storage');
+const precision = require('./precision');
 const { STARTER, longText, IMAGE_SVG } = require('./benchmarkPrompts');
 
 const ANSWER_TOKENS = 1024;
@@ -122,12 +123,13 @@ function view() {
   return { runId: job.runId, step: job.step, done: job.done, total: job.total, startedAt: job.startedAt, cancelled: job.abort.signal.aborted };
 }
 
-// The model is (or becomes) `keyword`; true when it was really loaded now.
+// The model is (or becomes) `keyword` (a controller keyword: a model, or one
+// of its precision variants); the load time when it was really loaded now.
 async function loadModel(coreApi, keyword, user, mode) {
   const st = await ctl.status(readConfig(coreApi));
   const snap = await vllm.snapshot(readConfig(coreApi));
   if (st.ok && st.keyword === keyword && snap.reachable && !st.switching) return null;
-  const s = await switcher.start(coreApi, { keyword, mode, user, purpose: 'benchmark', keepHold: true });
+  const s = await switcher.start(coreApi, { keyword: precision.modelOf(keyword), variant: keyword, mode, user, purpose: 'benchmark', keepHold: true });
   job.currentSwitch = s;
   await s.done;
   job.currentSwitch = null;

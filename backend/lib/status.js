@@ -9,6 +9,7 @@ const ctl = require('./ctl');
 const { readConfig } = require('./config');
 const { getSetting } = require('./settings');
 const switcher = require('./switcher');
+const precision = require('./precision');
 
 const CTL_CACHE_MS = 15000;
 let infoCache = { at: 0, value: null, pending: null };
@@ -71,7 +72,7 @@ async function overview(coreApi, { fresh = false } = {}) {
     message = 'The AI is not available right now.';
   }
 
-  const keyword = keywordForModelId(snap.modelId, info) || (controller ? controller.keyword : null);
+  const keyword = keywordForModelId(snap.modelId, info) || (controller ? precision.modelOf(controller.keyword) : null);
   const model = cfg.models.find(m => m.keyword === keyword) || null;
 
   // Waiting for running answers to finish before a switch: still usable, but
@@ -113,9 +114,10 @@ function setExpectedKeyword(keyword) {
   expectedCache = { at: Date.now(), value: keyword };
 }
 
+// keyword: a model, or a controller keyword of one of its precision variants
 function labelFor(cfg, keyword) {
-  const m = cfg.models.find(x => x.keyword === keyword);
-  return m ? m.label : (keyword || 'another model');
+  const m = cfg.models.find(x => x.keyword === precision.modelOf(keyword));
+  return m ? precision.label(m.label, keyword) : (keyword || 'another model');
 }
 
 module.exports = { overview, forgetCache, keywordForModelId, setExpectedKeyword };

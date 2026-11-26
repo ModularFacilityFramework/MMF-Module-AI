@@ -144,9 +144,16 @@ function SwitchPanel({ coreApi, loaded, onFinished }) {
   }, [api, version, busy]);
 
   if (!data) return error ? <div style={S.errorBanner}>{error}</div> : null;
-  const others = data.models.filter(m => m.keyword !== loaded);
-  const target = others.some(m => m.keyword === saved) ? saved : (others[0] ? others[0].keyword : '');
-  const targetLabel = (others.find(m => m.keyword === target) || {}).label;
+  // One choice per model, or per precision of a model that has several.
+  const tokens = n => `up to ${Math.round(n).toLocaleString()} tokens`;
+  const choices = data.models.flatMap(m => (m.variants && m.variants.length
+    ? m.variants.map(v => ({ value: v.key, keyword: m.keyword, variant: v.key, label: `${m.label}: ${v.label}${v.context ? `, ${tokens(v.context)}` : ''}` }))
+    : [{ value: m.keyword, keyword: m.keyword, variant: null, label: m.label }]));
+  const current = data.loaded || loaded;
+  const others = choices.filter(c => c.value !== current);
+  const chosen = others.find(c => c.value === saved) || others[0] || null;
+  const target = chosen ? chosen.value : '';
+  const targetLabel = chosen ? chosen.label : '';
   const { active, last, load } = data;
   const outside = load.vllmTotal === null ? 0 : Math.max(0, load.vllmTotal - load.mffRunning);
   const running = load.mffRunning + load.mffWaiting;
@@ -157,7 +164,7 @@ function SwitchPanel({ coreApi, loaded, onFinished }) {
     try { await fn(); setConfirm(false); } catch (err) { setError(text(err)); }
     setBusy(false);
   };
-  const start = mode => act(() => api.post('/ai/setup/switch', { keyword: target, mode }));
+  const start = mode => act(() => api.post('/ai/setup/switch', { keyword: chosen.keyword, variant: chosen.variant, mode }));
 
   return (
     <div style={{ border: '1px solid #dee2e6', borderRadius: '4px', padding: '14px', marginTop: '10px' }}>
@@ -183,7 +190,7 @@ function SwitchPanel({ coreApi, loaded, onFinished }) {
           {data.canSwitch && !confirm && (
             <div>
               <select style={{ ...S.field, marginRight: '8px' }} aria-label="Model to load" value={target} onChange={e => setTarget(e.target.value)}>
-                {others.map(m => <option key={m.keyword} value={m.keyword}>{m.label}</option>)}
+                {others.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
               </select>
               <button type="button" style={S.button(S.BLUE, !target)} disabled={!target} onClick={() => setConfirm(true)}>Switch…</button>
               <span style={S.small}>The AI is unavailable for everyone for about 1 to 2 minutes.</span>
