@@ -14,7 +14,7 @@ const TOOLS = [
   { name: 'My projects in MFF: bookings, samples, data, jobs', status: 'planned', note: 'Own projects only; the project and its members in core decide.' },
   { name: 'Finance: how charges are calculated and the current recovery rates', status: 'planned', note: 'Details (companies, costs, invoices) only for facility staff and developers.' },
   { name: 'Read files from my projects', status: 'planned', note: 'Through core, with the project-membership check in the backend.' },
-  { name: 'Slurm: queue, job state, node state', status: 'planned', note: 'Through the slurm module.' },
+  { name: 'Slurm: queue, job state, node state', status: 'done', note: 'Tools below (Slurm), through the slurm module\'s read-only routes: own jobs for users, all jobs and nodes for staff and developers.' },
   { name: 'cryoSPARC: job status and recent log lines', status: 'planned', note: 'Read-only, through the cryoem module.' },
   { name: 'Server status', status: 'planned', note: 'Developers and administrators only.' },
   { name: 'ChimeraX figures', status: 'planned', note: '' },

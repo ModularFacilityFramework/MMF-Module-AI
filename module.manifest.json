@@ -1,7 +1,7 @@
 {
   "id": "ai",
   "label": "AI",
-  "version": "0.1.20",
+  "version": "0.1.21",
   "tablePrefix": "ai_",
   "mountPath": "/ai",
   "backendEntry": "backend/index.js",

@@ -9,6 +9,7 @@ const calc = require('./calculator');
 const fileTools = require('./fileTools');
 const safety = require('./safety');
 const docs = require('./docs');
+const slurmTools = require('./slurmTools');
 
 const MAX_RESULT_CHARS = 9000;
 
@@ -183,15 +184,12 @@ const CATALOGUE = [
     },
     run: (args, ctx) => fileTools.make(args, ctx)
   },
-  ...docs.TOOLS
+  ...docs.TOOLS,
+  ...slurmTools.TOOLS
 ];
 
 // Shown in the catalogue, but not available.
 const UNAVAILABLE = [
-  {
-    key: 'slurm_jobs', name: 'My SLURM jobs', what: 'Would let the AI look at your own jobs in the SLURM module.', example: 'Why is my last job still pending?',
-    sees: 'Your own jobs, as you.', risk: 'reads your MFF data', needs: 'A connection to the SLURM module, which has not been built yet.'
-  },
   {
     key: 'web_search', name: 'Web search', what: 'Would let the AI search the internet.', example: 'What is the newest paper about this enzyme?',
     sees: 'The words the AI searches for would leave the facility.', risk: 'reaches the internet', needs: 'A search provider and a decision by the facility. Not built.'
