@@ -135,6 +135,7 @@ CREATE TABLE IF NOT EXISTS ai_skills (
   description VARCHAR(1024) NOT NULL,
   content MEDIUMTEXT NOT NULL,
   module_tag VARCHAR(32) NULL,
+  audience VARCHAR(16) NOT NULL DEFAULT 'user',
   enabled TINYINT NOT NULL DEFAULT 1,
   created_by BIGINT NULL,
   updated_by BIGINT NULL,
@@ -172,4 +173,23 @@ CREATE TABLE IF NOT EXISTS ai_skill_audit (
   skill VARCHAR(64) NOT NULL,
   action VARCHAR(80) NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Safety and scope checks (safety.js): one row per check, with no question or
+-- answer text. stage: question, scope, answer (the final check of an answer,
+-- which the asker waits for) or answer_stream (checks while it is written).
+-- result: pass, blocked, self_harm, out_of_scope or error.
+CREATE TABLE IF NOT EXISTS ai_safety_log (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  answer_id CHAR(36) NOT NULL,
+  user_id BIGINT NULL,
+  level VARCHAR(16) NOT NULL,
+  stage VARCHAR(16) NOT NULL,
+  result VARCHAR(16) NOT NULL,
+  label VARCHAR(16) NULL,
+  categories VARCHAR(200) NULL,
+  ms INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_ai_safety_log_answer (answer_id),
+  KEY idx_ai_safety_log_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

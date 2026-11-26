@@ -6,6 +6,7 @@ import * as S from './styles';
 const text = err => err.response?.data?.error || 'That did not work. Try again.';
 const SHOW = [['all', 'All'], ['installed', 'Installed'], ['catalogue', 'Not installed']];
 const validFilter = v => Boolean(v) && typeof v.search === 'string' && SHOW.some(s => s[0] === v.show);
+const AUDIENCE = [['user', 'everyone'], ['staff', 'facility staff and developers'], ['developer', 'developers and administrators only']];
 const RISK = { 'reads only': S.GREEN, 'makes new files': S.BLUE, 'reads your MFF data': 'warning', 'reaches the internet': S.RED };
 
 function ToolCard({ tool, data, act }) {
@@ -20,6 +21,14 @@ function ToolCard({ tool, data, act }) {
       <div style={S.small}>Example: "{tool.example}"</div>
       <div style={S.small}>What it can see: {tool.sees}</div>
       {tool.needs && <div style={S.small}>What it needs: {tool.needs}</div>}
+      {tool.installed && (
+        <div style={{ ...S.small, marginTop: '6px' }}>
+          For:{' '}
+          <select style={S.field} aria-label={`Audience of ${tool.name}`} disabled={!data.canEdit} value={tool.audience || 'user'} onChange={e => act(tool, { action: 'audience', audience: e.target.value })}>
+            {AUDIENCE.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
+        </div>
+      )}
       {tool.installed && (
         <div style={{ ...S.small, marginTop: '6px' }}>
           Who may use it: {tool.roles.length ? '' : 'everyone with access to the chat. '}

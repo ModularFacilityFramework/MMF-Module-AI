@@ -14,6 +14,7 @@ const gens = require('../lib/generations');
 const tools = require('../lib/tools');
 const skills = require('../lib/skills');
 const precision = require('../lib/precision');
+const safety = require('../lib/safety');
 const benchmark = require('../lib/benchmark');
 const perms = require('../lib/permissions');
 const { DEFAULT_SYSTEM } = require('../lib/answer');
@@ -338,6 +339,47 @@ module.exports = function buildSetupRouter(coreApi) {
   router.delete('/setup/skills/:id', ...policyGate, wrap(async (req, res) => {
     await skills.remove(coreApi.pool, intId(req.params.id) || -1, req.user.id);
     res.json({ success: true });
+  }));
+
+  // --- safety and scope ------------------------------------------------------------
+
+  router.get('/setup/safety', ...setupGate, wrap(async (req, res) => {
+    const cfg = readConfig(coreApi);
+    const days = [1, 7, 30].includes(Number(req.query.days)) ? Number(req.query.days) : 7;
+    const people = new Map((await coreApi.listUsers()).map(u => [Number(u.id), personLabel(u)]));
+    const [settings, guard, events, delay, counts] = await Promise.all([
+      safety.getSettings(coreApi.pool),
+      safety.guardStatus(cfg),
+      coreApi.pool.query("SELECT * FROM ai_safety_log WHERE result <> 'pass' ORDER BY id DESC LIMIT 50"),
+      // added delay per answer: the checks the asker waits for
+      coreApi.pool.query(
+        `SELECT level, COUNT(*) AS answers, AVG(t) AS avg_ms, MAX(t) AS max_ms FROM (
+           SELECT answer_id, level, SUM(ms) AS t FROM ai_safety_log
+            WHERE stage IN ('question', 'scope', 'answer') AND created_at > NOW() - INTERVAL ? DAY GROUP BY answer_id, level) x
+          GROUP BY level`, [days]),
+      coreApi.pool.query(
+        `SELECT stage, result, COUNT(*) AS n, AVG(ms) AS avg_ms FROM ai_safety_log
+          WHERE created_at > NOW() - INTERVAL ? DAY GROUP BY stage, result ORDER BY stage, result`, [days])
+    ]);
+    res.json({
+      settings,
+      guard,
+      roles: (await coreApi.listRoles()).filter(r => !perms.POLICY_ROLES.includes(r)),
+      developerRoles: perms.POLICY_ROLES,
+      levels: safety.LEVELS.map(l => ({ key: l, label: safety.LEVEL_LABEL[l] })),
+      canEdit: await perms.isPolicyUser(coreApi, req.user),
+      days,
+      delay: delay.map(d => ({ level: d.level, answers: Number(d.answers), avgMs: Math.round(Number(d.avg_ms)), maxMs: Number(d.max_ms) })),
+      counts: counts.map(c => ({ stage: c.stage, result: c.result, n: Number(c.n), avgMs: Math.round(Number(c.avg_ms)) })),
+      events: events.map(e => ({
+        id: Number(e.id), at: e.created_at, by: e.user_id ? people.get(Number(e.user_id)) || 'a removed user' : '-', level: e.level,
+        stage: e.stage, result: e.result, label: e.label, categories: e.categories, ms: e.ms, answer: e.answer_id.slice(0, 8)
+      }))
+    });
+  }));
+
+  router.put('/setup/safety', ...policyGate, wrap(async (req, res) => {
+    res.json({ settings: await safety.saveSettings(coreApi, req.body, req.user.id) });
   }));
 
   // --- benchmark -------------------------------------------------------------------

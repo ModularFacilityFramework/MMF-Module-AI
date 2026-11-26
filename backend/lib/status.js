@@ -55,10 +55,10 @@ async function overview(coreApi, { fresh = false } = {}) {
   const sw = switcher.state().active;
   if (sw && sw.phase !== 'waiting') {
     state = 'switching';
-    message = `The AI is switching to ${sw.toLabel}. This takes about 1-2 minutes. You can keep typing; nothing is lost.`;
+    message = `The AI is switching to ${sw.toLabel}. This takes about 2-3 minutes. You can keep typing; nothing is lost.`;
   } else if (controller && controller.switching) {
     state = 'switching';
-    message = `The AI is switching to ${labelFor(cfg, controller.keyword)}. This takes about 1-2 minutes.`;
+    message = `The AI is switching to ${labelFor(cfg, controller.keyword)}. This takes about 2-3 minutes.`;
   } else if (snap.reachable && snap.modelId) {
     state = 'ready';
     message = null;
@@ -66,7 +66,7 @@ async function overview(coreApi, { fresh = false } = {}) {
     // The controller has a model process but vLLM does not answer yet:
     // starting up, or a switch begun outside MFF.
     state = 'starting';
-    message = `The AI is starting ${labelFor(cfg, controller.keyword)}. This takes about 1-2 minutes.`;
+    message = `The AI is starting ${labelFor(cfg, controller.keyword)}. This takes about 2-3 minutes.`;
   } else {
     state = 'down';
     message = 'The AI is not available right now.';

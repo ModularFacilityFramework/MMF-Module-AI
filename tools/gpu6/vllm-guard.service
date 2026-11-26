@@ -1,0 +1,24 @@
+[Unit]
+Description=Qwen3Guard-Gen-0.6B safety model for the MFF AI module (GPU 3, port 8002)
+After=network.target vllm-controller.service
+
+[Service]
+Type=simple
+User=namlb
+Group=DomainUsers
+# Start after Qwen has taken its memory on GPU 3, so the two never profile at the same time.
+ExecStartPre=/bin/sleep 120
+ExecStart=/home/ai/micromamba/envs/vllm/bin/vllm serve /home/ai/models/guard/Qwen3Guard-Gen-0.6B --served-model-name guard --port 8002 --max-model-len 8192 --gpu-memory-utilization 0.06 --max-num-seqs 32
+Restart=on-failure
+RestartSec=30
+TimeoutStartSec=300
+
+Environment=MAMBA_ROOT_PREFIX=/home/ai/micromamba
+Environment=PYTHONNOUSERSITE=1
+Environment=CUDA_VISIBLE_DEVICES=GPU-13e60c09-7068-97d4-09ae-3ca6a3cb859d
+Environment=CUDA_HOME=/home/ai/micromamba/envs/vllm/lib/python3.12/site-packages/nvidia/cu13
+Environment=PATH=/home/ai/micromamba/envs/vllm/lib/python3.12/site-packages/nvidia/cu13/bin:/home/ai/micromamba/envs/vllm/bin:/usr/local/bin:/usr/bin:/bin
+Environment=VLLM_USE_FLASHINFER_SAMPLER=0
+
+[Install]
+WantedBy=multi-user.target

@@ -53,6 +53,8 @@ function readConfig(coreApi) {
   return {
     vllmUrl: (cfg.VLLM_URL || '').replace(/\/+$/, ''),
     vllmApiKey: cfg.VLLM_API_KEY || '',
+    // the guard model (Qwen3Guard) served beside the main model; optional
+    guardUrl: (cfg.GUARD_URL || '').replace(/\/+$/, ''),
     ssh: {
       host: cfg.CTL_SSH_HOST || '',
       port: positiveInt(cfg.CTL_SSH_PORT, 22),
@@ -75,7 +77,7 @@ function configStatus(coreApi) {
   const cfg = coreApi.getModuleConfig() || {};
   const parsed = readConfig(coreApi);
   return {
-    keys: REQUIRED_KEYS.concat(['VLLM_API_KEY', 'CTL_SSH_PORT', 'STORAGE_SUBDIR', 'REQUEST_TIMEOUT_S', 'SWITCH_TIMEOUT_S'])
+    keys: REQUIRED_KEYS.concat(['GUARD_URL', 'VLLM_API_KEY', 'CTL_SSH_PORT', 'STORAGE_SUBDIR', 'REQUEST_TIMEOUT_S', 'SWITCH_TIMEOUT_S'])
       .map(key => ({ key: `MODULE_AI_${key}`, required: REQUIRED_KEYS.includes(key), set: Boolean(cfg[key]) })),
     missing: parsed.missing.map(k => `MODULE_AI_${k}`),
     models: parsed.models,

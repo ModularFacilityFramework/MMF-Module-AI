@@ -39,6 +39,7 @@ function Conversation({ coreApi, chatId, limits, status, think, setThink, reason
       if (abort.signal.aborted) return;
       if (e.type === 'snapshot') Object.assign(g, e.generation);
       else if (e.type === 'content' || e.type === 'reasoning') g[e.type] += e.text;
+      else if (e.type === 'set' && (e.kind === 'content' || e.kind === 'reasoning')) g[e.kind] = e.text;
       else if (e.type === 'notice') g.notices = [...g.notices, e.text];
       else if (e.type === 'tool') g.tools = [...(g.tools || []), e.entry];
       else if (e.type === 'queued') g.position = e.position;

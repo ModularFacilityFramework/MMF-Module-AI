@@ -10,6 +10,7 @@ const { getSetting } = require('./settings');
 const { recordUsage } = require('./usage');
 const tools = require('./tools');
 const skills = require('./skills');
+const safety = require('./safety');
 
 const { HttpError } = storage;
 const MAX_TOOL_ROUNDS = 5;
@@ -38,6 +39,15 @@ const splitInlineThinking = (content) => {
   if (at < 0) return null;
   return { reasoning: content.slice(0, at).replace(/^\s*<think>/, '').trim(), content: content.slice(at + 8).trim() };
 };
+
+// Ends an answer early with a fixed text (safety, scope): not an error.
+class Answered extends Error {
+  constructor(text, status, why) {
+    super(why || 'answered');
+    this.text = text;
+    this.status = status;
+  }
+}
 
 function friendlyError(err) {
   if (err instanceof HttpError) return err.message;
@@ -84,7 +94,8 @@ function startAnswer(coreApi, { user, root, chatId, think, limits }) {
       ms: Date.now() - startedAt,
       firstTokenMs: firstAt ? firstAt - startedAt : null,
       queueMs: startedAt - askedAt,
-      reasoningMs: g.reasoning ? (thinkEndAt || Date.now()) - (firstAt || startedAt) : null
+      reasoningMs: g.reasoning ? (thinkEndAt || Date.now()) - (firstAt || startedAt) : null,
+      safetyMs: safetyMs.question + safetyMs.scope + safetyMs.answer
     });
     const total = setTimeout(() => { timedOut = 'The answer took too long and was stopped.'; g.abort.abort(); }, limits.totalTimeoutS * 1000);
     const arm = (seconds, message) => {
@@ -93,6 +104,8 @@ function startAnswer(coreApi, { user, root, chatId, think, limits }) {
     };
     let status = 'done';
     let error = null;
+    let blockedBy = null; // set when the guard stops the answer while it is written
+    const safetyMs = { question: 0, scope: 0, answer: 0 };
     try {
       const o = await requireReady(coreApi);
       startedAt = Date.now();
@@ -110,12 +123,64 @@ function startAnswer(coreApi, { user, root, chatId, think, limits }) {
       const history = await storage.readMessages(root, chatId);
       while (history.length && history[history.length - 1].role !== 'user') history.pop();
       if (!history.length) throw new HttpError(400, 'no_question', 'There is no question to answer.');
+
+      // --- safety and scope (safety.js), before anything reaches the model ---
+      const sset = await safety.getSettings(coreApi.pool);
+      const level = await safety.levelFor(coreApi, user, sset);
+      const pol = safety.policy(sset, level);
+      if (pol.scan) g.scan = safety.redactor(o.cfg, sset);
+      const question = history[history.length - 1].text || '';
+      const note = (stage, result, r) => safety.log(coreApi.pool, {
+        answerId: assistantId, userId: user.id, level, stage, result, label: r && r.label, categories: r && r.categories, ms: r ? r.ms : 0
+      });
+      const guardDown = async (stage, r) => {
+        await note(stage, 'error', r);
+        if (sset.guardDown === 'refuse') throw new Answered(safety.TEXT.guardDown, 'blocked');
+      };
+      if (pol.guard && question) {
+        const r = await safety.guard(o.cfg, [{ role: 'user', content: question }]);
+        safetyMs.question = r.ms;
+        if (r.configured && !r.ok) await guardDown('question', r);
+        else if (safety.isSelfHarm(r)) { await note('question', 'self_harm', r); throw new Answered(safety.TEXT.selfHarm, 'done'); }
+        else if (safety.isUnsafe(r)) { await note('question', 'blocked', r); throw new Answered(safety.TEXT.blocked(r.categories.join(', ')), 'blocked'); }
+        else if (r.configured) await note('question', 'pass', r);
+      }
+      if (pol.scope) {
+        const r = await safety.scope(o, history);
+        safetyMs.scope = r.ms;
+        await note('scope', r.ok ? (r.inScope ? 'pass' : 'out_of_scope') : 'error', r);
+        if (!r.inScope) throw new Answered(safety.TEXT.outOfScope, 'refused');
+      }
+      // The guard also reads the answer: every few thousand characters while it
+      // is written (without waiting), and once more at the end.
+      let checkedAt = 0;
+      let checking = false;
+      const answerText = () => `${g.reasoning ? `${g.reasoning.slice(-3000)}\n\n` : ''}${g.content}${g.pending.content || ''}`;
+      const checkAnswer = async (stage) => {
+        const r = await safety.guard(o.cfg, [{ role: 'user', content: question || '(files only)' }, { role: 'assistant', content: answerText() }]);
+        if (r.configured && !r.ok) { await note(stage, 'error', r); return r; }
+        if (safety.isUnsafe(r)) {
+          blockedBy = r;
+          await note(stage, 'blocked', r);
+          g.abort.abort();
+        } else if (r.configured && stage === 'answer') await note(stage, 'pass', r);
+        return r;
+      };
+      const watchAnswer = () => {
+        if (!pol.guard || checking || blockedBy) return;
+        const size = g.content.length + g.reasoning.length;
+        if (size - checkedAt < safety.ANSWER_CHECK_EVERY) return;
+        checkedAt = size;
+        checking = true;
+        checkAnswer('answer_stream').catch(() => {}).finally(() => { checking = false; });
+      };
+
       // Tools take room too: their descriptions, and what they answer.
       // Skills come with tools: only a model that can use tools can load them.
       const skillSet = caps.includes('tools')
-        ? await skills.forAnswer(coreApi.pool).catch(() => { console.error('[ai] could not read the skills'); return { prompt: '', tools: [] }; })
+        ? await skills.forAnswer(coreApi.pool, level).catch(() => { console.error('[ai] could not read the skills'); return { prompt: '', tools: [] }; })
         : { prompt: '', tools: [] };
-      const available = caps.includes('tools') ? [...await tools.forUser(coreApi, user), ...skillSet.tools] : [];
+      const available = caps.includes('tools') ? [...await tools.forUser(coreApi, user, level), ...skillSet.tools] : [];
       const toolDefs = available.map(t => ({ type: 'function', function: t.definition }));
       const toolReserve = available.length
         ? await context.countTokens(o.cfg, o.vllm.modelId, JSON.stringify(toolDefs)) + TOOL_PROMPT_OVERHEAD + TOOL_RESULT_RESERVE : 0;
@@ -148,6 +213,7 @@ function startAnswer(coreApi, { user, root, chatId, think, limits }) {
           if (d.content && g.reasoning && !thinkEndAt) thinkEndAt = Date.now();
           gens.add(g, 'reasoning', d.reasoning);
           gens.add(g, 'content', d.content);
+          watchAnswer();
         }
       };
       for (let round = 0; ; round++) {
@@ -190,6 +256,13 @@ function startAnswer(coreApi, { user, root, chatId, think, limits }) {
           delete body.tools;
         }
       }
+      gens.flush(g);
+      if (pol.guard && g.content && !blockedBy) {
+        const r = await checkAnswer('answer');
+        safetyMs.answer = r.ms;
+        if (r.configured && !r.ok && sset.guardDown === 'refuse') blockedBy = { categories: [] };
+      }
+      if (blockedBy) throw new Error('blocked');
       if (!g.content && status === 'done') {
         status = 'error';
         error = 'The AI finished without writing an answer. Try "Answer again".';
@@ -199,7 +272,16 @@ function startAnswer(coreApi, { user, root, chatId, think, limits }) {
         if (split) Object.assign(g, split);
       }
     } catch (err) {
-      if (timedOut) {
+      if (err instanceof Answered) {
+        gens.set(g, 'reasoning', '');
+        gens.set(g, 'content', err.text);
+        status = err.status;
+      } else if (blockedBy) {
+        gens.set(g, 'reasoning', '');
+        gens.set(g, 'content', safety.TEXT.blockedAnswer);
+        g.files = [];
+        status = 'blocked';
+      } else if (timedOut) {
         status = 'error';
         error = timedOut;
       } else if (g.stopReason) {
@@ -212,6 +294,7 @@ function startAnswer(coreApi, { user, root, chatId, think, limits }) {
     } finally {
       clearTimeout(timer);
       clearTimeout(total);
+      gens.flush(g);
     }
     await save(g, { status, error, ...stats() });
     await recordUsage(coreApi.pool, { userId: user.id, keyword, status, ...stats() });

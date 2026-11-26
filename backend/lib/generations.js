@@ -87,7 +87,7 @@ function finish(g) {
 function create({ userId, chatId, limits, meta, run, onCancelled }) {
   const g = {
     id: randomUUID(), userId, chatId, limits, meta, run, onCancelled,
-    state: 'queued', position: 0, content: '', reasoning: '', tools: [], files: [], notices: [],
+    state: 'queued', position: 0, content: '', reasoning: '', tools: [], files: [], notices: [], scan: null, pending: {},
     abort: new AbortController(), stopReason: null, listeners: new Set(), result: null, createdAt: Date.now()
   };
   all.set(g.id, g);
@@ -96,14 +96,47 @@ function create({ userId, chatId, limits, meta, run, onCancelled }) {
   return g;
 }
 
-function add(g, kind, text) {
+function show(g, kind, text) {
   if (!g[kind]) text = text.trimStart(); // models often open with blank lines
   if (!text) return;
   g[kind] += text;
   emit(g, { type: kind, text });
 }
 
+// With g.scan set (the output scan, safety.js), text is shown in pieces that
+// end at white space, each scanned first: what a pattern needs is never split.
+const HOLD_MAX = 400;
+function add(g, kind, text) {
+  if (!text) return;
+  if (!g.scan) { show(g, kind, text); return; }
+  const buf = (g.pending[kind] || '') + text;
+  const cut = Math.max(buf.lastIndexOf(' '), buf.lastIndexOf('\n'), buf.lastIndexOf('\t'));
+  if (cut < 0 && buf.length < HOLD_MAX) { g.pending[kind] = buf; return; }
+  const upto = cut < 0 ? buf.length : cut + 1;
+  g.pending[kind] = buf.slice(upto);
+  show(g, kind, g.scan(buf.slice(0, upto)));
+}
+
+// Shows what add() still holds back (at the end of an answer).
+function flush(g) {
+  for (const kind of ['reasoning', 'content']) {
+    const rest = g.pending[kind];
+    g.pending[kind] = '';
+    if (rest) show(g, kind, g.scan ? g.scan(rest) : rest);
+  }
+}
+
+// Replaces the whole text (an answer stopped by the safety check).
+function set(g, kind, text) {
+  g.pending[kind] = '';
+  g[kind] = text;
+  emit(g, { type: 'set', kind, text });
+}
+
 function tool(g, entry) {
+  if (g.scan) {
+    for (const k of ['args', 'result', 'call']) if (typeof entry[k] === 'string') entry[k] = g.scan(entry[k]);
+  }
   g.tools.push(entry);
   emit(g, { type: 'tool', entry });
 }
@@ -149,6 +182,6 @@ async function drained(timeoutMs) {
 const get = id => all.get(id) || null;
 
 module.exports = {
-  create, get, add, tool, notice, stop, stopRunning, hold, release, held, drained, counts,
+  create, get, add, flush, set, tool, notice, stop, stopRunning, hold, release, held, drained, counts,
   takeQuestion, activeForUser, activeForChat, isActive
 };

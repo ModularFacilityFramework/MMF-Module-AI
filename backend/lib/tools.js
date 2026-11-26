@@ -7,6 +7,7 @@ const storage = require('./storage');
 const { getSetting, setSetting } = require('./settings');
 const calc = require('./calculator');
 const fileTools = require('./fileTools');
+const safety = require('./safety');
 
 const MAX_RESULT_CHARS = 9000;
 
@@ -229,7 +230,8 @@ async function readAttached(args, ctx) {
 
 const byKey = key => CATALOGUE.find(t => t.key === key) || null;
 
-// Saved state: { key: { enabled: boolean, roles: [] } }. Present = installed.
+// Saved state: { key: { enabled, roles: [], audience: 'user'|'staff'|'developer' } }.
+// Present = installed.
 async function getState(pool) {
   const s = await getSetting(pool, 'tools', {});
   return s && typeof s === 'object' ? s : {};
@@ -245,7 +247,7 @@ async function change(coreApi, key, body, userId) {
   const { action } = body || {};
   if (action === 'install') {
     if (state[key]) throw new storage.HttpError(409, 'installed', 'This tool is already installed.');
-    state[key] = { enabled: true, roles: [] };
+    state[key] = { enabled: true, roles: [], audience: 'user' };
   } else {
     if (!state[key]) throw new storage.HttpError(409, 'not_installed', 'This tool is not installed.');
     if (action === 'remove') delete state[key];
@@ -253,6 +255,9 @@ async function change(coreApi, key, body, userId) {
     else if (action === 'roles') {
       const roles = await coreApi.listRoles();
       state[key] = { ...state[key], roles: [...new Set(Array.isArray(body.roles) ? body.roles : [])].filter(r => roles.includes(r)) };
+    } else if (action === 'audience') {
+      if (!safety.LEVELS.includes(body.audience)) throw new storage.HttpError(400, 'bad_audience', 'Choose who the tool is for.');
+      state[key] = { ...state[key], audience: body.audience };
     } else throw new storage.HttpError(400, 'bad_action', 'Unknown action.');
   }
   await setSetting(coreApi.pool, 'tools', state, userId);
@@ -260,13 +265,14 @@ async function change(coreApi, key, body, userId) {
   return state;
 }
 
-// The tools this person's question may use, as the model sees them.
-async function forUser(coreApi, user) {
+// The tools this person's question may use, as the model sees them: switched
+// on, for one of their roles, and for their audience level (safety.js).
+async function forUser(coreApi, user, level = 'user') {
   const state = await getState(coreApi.pool).catch(() => ({}));
   const roles = await coreApi.getUserRoles(user);
   return CATALOGUE.filter((t) => {
     const s = state[t.key];
-    return s && s.enabled && (!s.roles.length || s.roles.some(r => roles.includes(r)));
+    return s && s.enabled && (!s.roles.length || s.roles.some(r => roles.includes(r))) && safety.allowed(s.audience || 'user', level);
   });
 }
 

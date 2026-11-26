@@ -6,6 +6,7 @@ import ConfigPanel from './ConfigPanel';
 import BenchmarkPanel from './BenchmarkPanel';
 import ToolsPanel from './ToolsPanel';
 import SkillsPanel from './SkillsPanel';
+import SafetyPanel from './SafetyPanel';
 import LimitsPanel from './LimitsPanel';
 import UsagePanel from './UsagePanel';
 import * as S from './styles';
@@ -15,6 +16,7 @@ const SUBTABS = [
   { key: 'benchmark', label: 'Benchmark' },
   { key: 'tools', label: 'Tools' },
   { key: 'skills', label: 'Skills' },
+  { key: 'safety', label: 'Safety' },
   { key: 'limits', label: 'Limits' },
   { key: 'usage', label: 'Usage' },
   { key: 'config', label: 'Configuration' }
@@ -34,6 +36,7 @@ function SetupTab({ coreApi, initialStatus }) {
       {subtab === 'benchmark' && <BenchmarkPanel coreApi={coreApi} />}
       {subtab === 'tools' && <ToolsPanel coreApi={coreApi} />}
       {subtab === 'skills' && <SkillsPanel coreApi={coreApi} />}
+      {subtab === 'safety' && <SafetyPanel coreApi={coreApi} />}
       {subtab === 'limits' && <LimitsPanel coreApi={coreApi} />}
       {subtab === 'usage' && <UsagePanel coreApi={coreApi} />}
       {subtab === 'config' && <ConfigPanel coreApi={coreApi} initialStatus={initialStatus} />}

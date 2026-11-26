@@ -8,6 +8,7 @@
 // reference file with read_skill_file. So only models that can use tools use
 // skills; the others answer without them.
 const { HttpError } = require('./storage');
+const { LEVELS } = require('./safety');
 
 const NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const FILE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
@@ -60,7 +61,7 @@ function parse(content) {
   return { name: unquote(fields.name), description: unquote(fields.description).replace(/^[>|]-?\s*/, ''), body: m[2].trim() };
 }
 
-function check({ content, tag, files }) {
+function check({ content, tag, files, audience }) {
   const text = String(content || '').replace(/\r\n?/g, '\n');
   if (text.length > MAX.skillChars) throw new HttpError(400, 'too_long', `SKILL.md is ${text.length} characters; the most is ${MAX.skillChars}. Move details to a reference file.`);
   const p = parse(text);
@@ -70,6 +71,7 @@ function check({ content, tag, files }) {
   if (!p.description) throw new HttpError(400, 'no_description', 'The description is missing: it tells the AI when to use the skill.');
   if (p.description.length > MAX.description) throw new HttpError(400, 'bad_description', `The description is longer than ${MAX.description} characters.`);
   if (!p.body) throw new HttpError(400, 'no_body', 'The steps are missing: write them below the frontmatter.');
+  const cleanAudience = LEVELS.includes(audience) ? audience : 'user';
   const cleanTag = tag === null || tag === undefined || tag === '' ? null : String(tag).trim().toLowerCase();
   if (cleanTag !== null && !TAG_RE.test(cleanTag)) throw new HttpError(400, 'bad_tag', 'A module tag is lowercase letters, digits, "-" or "_", at most 32 characters.');
   const list = Array.isArray(files) ? files : [];
@@ -88,17 +90,17 @@ function check({ content, tag, files }) {
     return { name, content: body };
   });
   if (total > MAX.totalChars) throw new HttpError(400, 'skill_too_long', `The skill and its files are longer than ${MAX.totalChars} characters together.`);
-  return { ...p, content: text, tag: cleanTag, files: cleanFiles };
+  return { ...p, content: text, tag: cleanTag, audience: cleanAudience, files: cleanFiles };
 }
 
 const row = r => ({
-  id: Number(r.id), name: r.name, description: r.description, tag: r.module_tag || null, enabled: Boolean(r.enabled),
+  id: Number(r.id), name: r.name, description: r.description, tag: r.module_tag || null, audience: r.audience || 'user', enabled: Boolean(r.enabled),
   updatedAt: r.updated_at, updatedBy: r.updated_by === null ? null : Number(r.updated_by)
 });
 
 async function list(pool) {
   const [skills, files] = await Promise.all([
-    pool.query('SELECT id, name, description, module_tag, enabled, updated_at, updated_by FROM ai_skills ORDER BY name'),
+    pool.query('SELECT id, name, description, module_tag, audience, enabled, updated_at, updated_by FROM ai_skills ORDER BY name'),
     pool.query('SELECT skill_id, name, CHAR_LENGTH(content) AS chars FROM ai_skill_files ORDER BY name')
   ]);
   return skills.map(s => ({ ...row(s), files: files.filter(f => Number(f.skill_id) === Number(s.id)).map(f => ({ name: f.name, chars: Number(f.chars) })) }));
@@ -131,14 +133,14 @@ async function save(pool, id, body, userId) {
       if (!old.length) throw new HttpError(404, 'no_skill', 'This skill no longer exists.');
       action = old[0].name === s.name ? 'edit' : `rename from ${old[0].name}`.slice(0, 80);
       await conn.query(
-        'UPDATE ai_skills SET name = ?, description = ?, content = ?, module_tag = ?, enabled = ?, updated_by = ? WHERE id = ?',
-        [s.name, s.description, s.content, s.tag, enabled ? 1 : 0, userId || null, id]
+        'UPDATE ai_skills SET name = ?, description = ?, content = ?, module_tag = ?, audience = ?, enabled = ?, updated_by = ? WHERE id = ?',
+        [s.name, s.description, s.content, s.tag, s.audience, enabled ? 1 : 0, userId || null, id]
       );
       await conn.query('DELETE FROM ai_skill_files WHERE skill_id = ?', [id]);
     } else {
       const r = await conn.query(
-        'INSERT INTO ai_skills (name, description, content, module_tag, enabled, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [s.name, s.description, s.content, s.tag, enabled ? 1 : 0, userId || null, userId || null]
+        'INSERT INTO ai_skills (name, description, content, module_tag, audience, enabled, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [s.name, s.description, s.content, s.tag, s.audience, enabled ? 1 : 0, userId || null, userId || null]
       );
       skillId = Number(r.insertId);
     }
@@ -178,13 +180,16 @@ async function logUse(ctx, skill, file) {
   ).catch(() => console.error('[ai] could not log a skill use'));
 }
 
-// What one answer gets: the text for the system prompt and the two tools.
-// Read once per answer, so the list and the tools agree.
-async function forAnswer(pool) {
+// What one answer gets: the text for the system prompt and the two tools,
+// with only the skills meant for the asker's level (safety.js). Read once per
+// answer, so the list and the tools agree.
+async function forAnswer(pool, level = 'user') {
+  const levels = LEVELS.slice(0, LEVELS.indexOf(level) + 1);
   const rows = await pool.query(
     `SELECT s.id, s.name, s.description, COUNT(f.id) AS files
        FROM ai_skills s LEFT JOIN ai_skill_files f ON f.skill_id = s.id
-      WHERE s.enabled = 1 GROUP BY s.id, s.name, s.description ORDER BY s.name LIMIT ${MAX.listed}`
+      WHERE s.enabled = 1 AND s.audience IN (?) GROUP BY s.id, s.name, s.description ORDER BY s.name LIMIT ${MAX.listed}`,
+    [levels.length ? levels : ['user']]
   );
   if (!rows.length) return { prompt: '', tools: [] };
   const names = rows.map(r => r.name);
@@ -207,8 +212,8 @@ async function forAnswer(pool) {
     },
     run: async (args, ctx) => {
       const r = find(args.name);
-      const [skill] = await pool.query('SELECT content, enabled FROM ai_skills WHERE id = ?', [r.id]);
-      if (!skill || !skill.enabled) throw new Error('this skill has just been switched off or deleted');
+      const [skill] = await pool.query('SELECT content, enabled, audience FROM ai_skills WHERE id = ?', [r.id]);
+      if (!skill || !skill.enabled || !levels.includes(skill.audience)) throw new Error('this skill has just been switched off or deleted');
       const files = await pool.query('SELECT name, CHAR_LENGTH(content) AS chars FROM ai_skill_files WHERE skill_id = ? ORDER BY name', [r.id]);
       await logUse(ctx, r.name, null);
       const { body } = parse(skill.content);

@@ -17,6 +17,7 @@ const validSections = v => Boolean(v) && typeof v.uses === 'boolean' && typeof v
 const validDraft = v => v === null || (Boolean(v) && Number.isInteger(v.id) && typeof v.content === 'string'
   && typeof v.tag === 'string' && typeof v.enabled === 'boolean' && Array.isArray(v.files)
   && v.files.every(f => f && typeof f.name === 'string' && (typeof f.content === 'string' || typeof f.from === 'string')));
+const AUDIENCE = { user: 'everyone', staff: 'facility staff', developer: 'developers' };
 const PAGE_STATE_MAX = 60000; // core keeps at most 64 KB per value
 const mono = { fontFamily: 'SFMono-Regular, Consolas, monospace', fontSize: '12px' };
 const when = at => new Date(at).toLocaleString();
@@ -82,7 +83,7 @@ function Editor({ api, data, draft, setDraft, resetDraft, tooBig, readOnly, relo
     if (files.some(f => f.content === undefined)) { setError('The saved files are still loading. Try again in a moment.'); return; }
     setBusy(true);
     try {
-      const body = { content: draft.content, tag: draft.tag, enabled: draft.enabled, files };
+      const body = { content: draft.content, tag: draft.tag, audience: draft.audience || 'user', enabled: draft.enabled, files };
       if (draft.id) await api.put(`/ai/setup/skills/${draft.id}`, body);
       else await api.post('/ai/setup/skills', body);
       setError('');
@@ -109,6 +110,12 @@ function Editor({ api, data, draft, setDraft, resetDraft, tooBig, readOnly, relo
           <input style={{ ...S.field, width: '140px' }} list="ai-skill-tags" aria-label="Module tag" placeholder="for example slurm" maxLength={32} disabled={readOnly} value={draft.tag} onChange={e => setDraft(d => ({ ...d, tag: e.target.value }))} />
         </label>
         <datalist id="ai-skill-tags">{tags.map(t => <option key={t} value={t} />)}</datalist>
+        <label style={{ marginLeft: '14px' }}>
+          For{' '}
+          <select style={S.field} aria-label="Audience" disabled={readOnly} value={draft.audience || 'user'} onChange={e => setDraft(d => ({ ...d, audience: e.target.value }))}>
+            {Object.entries(AUDIENCE).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
+        </label>
         <label style={{ marginLeft: '14px' }}>
           <input type="checkbox" disabled={readOnly} checked={draft.enabled} onChange={e => setDraft(d => ({ ...d, enabled: e.target.checked }))} /> On (the AI may use it)
         </label>
@@ -220,7 +227,7 @@ function SkillsPanel({ coreApi }) {
         <div style={S.tableWrapper}>
           <table style={S.table}>
             <thead style={S.thead}>
-              <tr><th style={S.th}>Skill</th><th style={S.th}>When the AI uses it</th><th style={S.th}>Tag</th><th style={S.th}>Files</th><th style={S.th}>State</th><th style={S.th} /></tr>
+              <tr><th style={S.th}>Skill</th><th style={S.th}>When the AI uses it</th><th style={S.th}>Tag</th><th style={S.th}>For</th><th style={S.th}>Files</th><th style={S.th}>State</th><th style={S.th} /></tr>
             </thead>
             <tbody>
               {shown.map(s => (
@@ -228,6 +235,7 @@ function SkillsPanel({ coreApi }) {
                   <td style={{ ...S.td, ...mono }}>{s.name}</td>
                   <td style={S.td}>{s.description}</td>
                   <td style={S.td}>{s.tag || '-'}</td>
+                  <td style={S.td}>{AUDIENCE[s.audience] || 'everyone'}</td>
                   <td style={S.td}>{s.files.length || '-'}</td>
                   <td style={S.td}><span style={S.chip(s.enabled ? S.GREEN : S.GREY)}>{s.enabled ? 'on' : 'off'}</span></td>
                   <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
@@ -286,7 +294,7 @@ function EditorLoader(props) {
     let alive = true;
     api.get(`/ai/setup/skills/${draft.id}`).then((r) => {
       const s = r.data.skill;
-      if (alive) setDraft({ id: s.id, content: s.content, tag: s.tag || '', enabled: s.enabled, files: s.files.map(f => ({ name: f.name, from: f.name })) });
+      if (alive) setDraft({ id: s.id, content: s.content, tag: s.tag || '', audience: s.audience || 'user', enabled: s.enabled, files: s.files.map(f => ({ name: f.name, from: f.name })) });
     }).catch((err) => {
       if (!alive) return;
       if (err.response?.status === 404) resetDraft(); // deleted meanwhile: nothing to show

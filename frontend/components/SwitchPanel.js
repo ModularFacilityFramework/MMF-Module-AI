@@ -193,13 +193,13 @@ function SwitchPanel({ coreApi, loaded, onFinished }) {
                 {others.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
               </select>
               <button type="button" style={S.button(S.BLUE, !target)} disabled={!target} onClick={() => setConfirm(true)}>Switch…</button>
-              <span style={S.small}>The AI is unavailable for everyone for about 1 to 2 minutes.</span>
+              <span style={S.small}>The AI is unavailable for everyone for about 2 to 3 minutes (about 10 minutes the first time a model starts at a new length).</span>
             </div>
           )}
           {data.canSwitch && confirm && (
             <div style={S.warningBanner}>
               <p style={{ marginTop: 0 }}>
-                <strong>Load {targetLabel}?</strong> The AI stops answering for everyone for about 1 to 2 minutes.
+                <strong>Load {targetLabel}?</strong> The AI stops answering for everyone for about 2 to 3 minutes (about 10 minutes the first time a model starts at a new length).
                 {' '}Right now: {running === 0 && outside === 0 ? 'nobody is using it.' : `${load.mffRunning} answers running and ${load.mffWaiting} waiting in MFF, ${outside} from outside MFF.`}
               </p>
               <button type="button" style={S.button(S.BLUE, busy)} disabled={busy} onClick={() => start('wait')}>
