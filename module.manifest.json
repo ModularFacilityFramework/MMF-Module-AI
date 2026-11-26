@@ -1,11 +1,14 @@
 {
   "id": "ai",
   "label": "AI",
-  "version": "0.1.21",
+  "version": "0.1.22",
   "tablePrefix": "ai_",
   "mountPath": "/ai",
   "backendEntry": "backend/index.js",
   "frontendEntry": "frontend/index.js",
+  "requires": [
+    "slurm"
+  ],
   "actsAsUsers": true,
   "pages": [
     {
