@@ -4,6 +4,7 @@
 // (ai.setup.skills.sections), the unsaved draft (ai.setup.skills.draft) and
 // the file open in it (ai.setup.skills.editorFile).
 import React, { useCallback, useEffect, useState } from 'react';
+import Overview from './Overview';
 import * as S from './styles';
 
 const text = err => err.response?.data?.error || 'That did not work. Try again.';
@@ -200,6 +201,7 @@ function SkillsPanel({ coreApi }) {
         files) and follows them. The chat shows when a skill is loaded. Skills are written like Claude Code skills: a SKILL.md with a
         frontmatter, then the steps.
       </div>
+      <Overview title="Skills" items={data.overview} usePageState={usePageState} stateKey="ai.setup.skills.overviewOpen" />
       {!data.loadedCanUse && (
         <div style={S.warningBanner}>
           {data.loadedModel ? `The loaded model (${data.loadedModel}) cannot use skills: it answers without them.` : 'No model is loaded.'} Skills work with: {data.capableModels.join(', ') || 'none'}.

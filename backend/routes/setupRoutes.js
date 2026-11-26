@@ -15,6 +15,7 @@ const tools = require('../lib/tools');
 const skills = require('../lib/skills');
 const precision = require('../lib/precision');
 const safety = require('../lib/safety');
+const capabilities = require('../lib/capabilities');
 const benchmark = require('../lib/benchmark');
 const perms = require('../lib/permissions');
 const { DEFAULT_SYSTEM } = require('../lib/answer');
@@ -286,6 +287,7 @@ module.exports = function buildSetupRouter(coreApi) {
       loadedCanUse: Boolean(o.model && o.model.capabilities.includes('tools')),
       roles: await coreApi.listRoles(),
       canEdit: await perms.isPolicyUser(coreApi, req.user),
+      overview: capabilities.TOOLS,
       log: log.map(r => ({ id: r.id, tool: r.tool, action: r.action, at: r.created_at, by: people.get(Number(r.user_id)) || 'a removed user' }))
     });
   }));
@@ -310,6 +312,7 @@ module.exports = function buildSetupRouter(coreApi) {
     const who = id => (id === null || id === undefined ? 'unknown' : people.get(Number(id)) || 'a removed user');
     res.json({
       skills: list.map(s => ({ ...s, updatedBy: s.updatedBy === null ? null : who(s.updatedBy) })),
+      overview: await capabilities.skills(coreApi.pool),
       max: skills.MAX,
       template: skills.TEMPLATE,
       capableModels: cfg.models.filter(m => m.capabilities.includes('tools')).map(m => m.label),

@@ -1,6 +1,7 @@
 // Setup -> Tools: what the AI can use besides writing text. Written for people
 // who have never used AI tools. Search and filter persist (ai.setup.tools.filter).
 import React, { useCallback, useEffect, useState } from 'react';
+import Overview from './Overview';
 import * as S from './styles';
 
 const text = err => err.response?.data?.error || 'That did not work. Try again.';
@@ -56,7 +57,7 @@ function ToolCard({ tool, data, act }) {
           {tool.installed && <button type="button" style={S.button(S.RED)} onClick={() => act(tool, { action: 'remove' })}>Remove</button>}
         </div>
       )}
-      {!tool.available && <div style={{ ...S.small, marginTop: '8px' }}>Not available yet.</div>}
+      {!tool.available && <div style={{ ...S.small, marginTop: '8px' }}>Planned: not built yet.</div>}
     </div>
   );
 }
@@ -95,6 +96,7 @@ function ToolsPanel({ coreApi }) {
         the AI. Tools run only inside MFF, as the person asking, with that person's permissions. The chat shows every time a tool is used.
         "Install" only switches on something that is already part of this module: nothing is downloaded.
       </div>
+      <Overview title="What the AI can do" items={data.overview} usePageState={usePageState} stateKey="ai.setup.tools.overviewOpen" />
       {!data.loadedCanUse && (
         <div style={S.warningBanner}>
           {data.loadedModel ? `The loaded model (${data.loadedModel}) cannot use tools.` : 'No model is loaded.'} Tools work with: {data.capableModels.join(', ') || 'none'}.
@@ -115,7 +117,7 @@ function ToolsPanel({ coreApi }) {
       )}
       {filter.show !== 'installed' && (
         <>
-          <div style={S.heading}>Could be installed</div>
+          <div style={S.heading}>Could be installed, and planned</div>
           {catalogue.length ? catalogue.map(t => <ToolCard key={t.key} tool={t} data={data} act={act} />) : <div style={S.empty}>Nothing else{q ? ' that matches' : ''}.</div>}
         </>
       )}
