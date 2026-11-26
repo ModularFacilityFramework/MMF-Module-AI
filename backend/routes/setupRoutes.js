@@ -12,6 +12,7 @@ const { LIMITS, DEFAULTS, getLimits, saveLimits } = require('../lib/limits');
 const vllm = require('../lib/vllm');
 const gens = require('../lib/generations');
 const tools = require('../lib/tools');
+const skills = require('../lib/skills');
 const benchmark = require('../lib/benchmark');
 const perms = require('../lib/permissions');
 const { DEFAULT_SYSTEM } = require('../lib/answer');
@@ -270,6 +271,52 @@ module.exports = function buildSetupRouter(coreApi) {
 
   router.post('/setup/tools/:key', ...policyGate, wrap(async (req, res) => {
     await tools.change(coreApi, req.params.key, req.body, req.user.id);
+    res.json({ success: true });
+  }));
+
+  // --- skills ----------------------------------------------------------------------
+
+  router.get('/setup/skills', ...setupGate, wrap(async (req, res) => {
+    const cfg = readConfig(coreApi);
+    const o = await overview(coreApi);
+    const people = new Map((await coreApi.listUsers()).map(u => [Number(u.id), personLabel(u)]));
+    const label = kw => (cfg.models.find(m => m.keyword === kw) || { label: kw || '?' }).label;
+    const [list, uses, changes] = await Promise.all([
+      skills.list(coreApi.pool),
+      coreApi.pool.query('SELECT * FROM ai_skill_log ORDER BY id DESC LIMIT 50'),
+      coreApi.pool.query('SELECT * FROM ai_skill_audit ORDER BY id DESC LIMIT 30')
+    ]);
+    const who = id => (id === null || id === undefined ? 'unknown' : people.get(Number(id)) || 'a removed user');
+    res.json({
+      skills: list.map(s => ({ ...s, updatedBy: s.updatedBy === null ? null : who(s.updatedBy) })),
+      max: skills.MAX,
+      template: skills.TEMPLATE,
+      capableModels: cfg.models.filter(m => m.capabilities.includes('tools')).map(m => m.label),
+      loadedModel: o.model ? o.model.label : null,
+      loadedCanUse: Boolean(o.model && o.model.capabilities.includes('tools')),
+      canEdit: await perms.isPolicyUser(coreApi, req.user),
+      uses: uses.map(r => ({
+        id: Number(r.id), answer: r.answer_id.slice(0, 8), skill: r.skill, file: r.file_name, model: label(r.keyword), by: who(r.user_id), at: r.created_at
+      })),
+      changes: changes.map(r => ({ id: Number(r.id), skill: r.skill, action: r.action, by: who(r.user_id), at: r.created_at }))
+    });
+  }));
+
+  router.get('/setup/skills/:id', ...setupGate, wrap(async (req, res) => {
+    res.json({ skill: await skills.get(coreApi.pool, intId(req.params.id) || -1) });
+  }));
+  router.post('/setup/skills', ...policyGate, wrap(async (req, res) => {
+    res.status(201).json({ id: await skills.save(coreApi.pool, 0, req.body, req.user.id) });
+  }));
+  router.put('/setup/skills/:id', ...policyGate, wrap(async (req, res) => {
+    res.json({ id: await skills.save(coreApi.pool, intId(req.params.id) || -1, req.body, req.user.id) });
+  }));
+  router.post('/setup/skills/:id/enabled', ...policyGate, wrap(async (req, res) => {
+    await skills.setEnabled(coreApi.pool, intId(req.params.id) || -1, Boolean(req.body && req.body.enabled), req.user.id);
+    res.json({ success: true });
+  }));
+  router.delete('/setup/skills/:id', ...policyGate, wrap(async (req, res) => {
+    await skills.remove(coreApi.pool, intId(req.params.id) || -1, req.user.id);
     res.json({ success: true });
   }));
 

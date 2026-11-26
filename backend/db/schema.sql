@@ -125,3 +125,51 @@ CREATE TABLE IF NOT EXISTS ai_benchmark_results (
   scored_by BIGINT NULL,
   KEY idx_ai_bench_results_run (run_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Skills: written instructions the AI loads for particular tasks (Setup ->
+-- Skills). content is the whole SKILL.md (frontmatter + steps); name and
+-- description are copied from its frontmatter for listing.
+CREATE TABLE IF NOT EXISTS ai_skills (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(64) NOT NULL,
+  description VARCHAR(1024) NOT NULL,
+  content MEDIUMTEXT NOT NULL,
+  module_tag VARCHAR(32) NULL,
+  enabled TINYINT NOT NULL DEFAULT 1,
+  created_by BIGINT NULL,
+  updated_by BIGINT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_ai_skills_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS ai_skill_files (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  skill_id BIGINT NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  content MEDIUMTEXT NOT NULL,
+  UNIQUE KEY uq_ai_skill_files_name (skill_id, name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Which skill (or skill file) was loaded for which answer. The answer id is the
+-- id of the answer in the person's own chat; no question or answer text here.
+CREATE TABLE IF NOT EXISTS ai_skill_log (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  answer_id CHAR(36) NOT NULL,
+  user_id BIGINT NULL,
+  skill VARCHAR(64) NOT NULL,
+  file_name VARCHAR(100) NULL,
+  keyword VARCHAR(32) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_ai_skill_log_answer (answer_id),
+  KEY idx_ai_skill_log_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Who created, changed, switched on or off, or deleted which skill.
+CREATE TABLE IF NOT EXISTS ai_skill_audit (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT NULL,
+  skill VARCHAR(64) NOT NULL,
+  action VARCHAR(80) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

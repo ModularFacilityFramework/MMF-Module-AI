@@ -9,6 +9,7 @@ const { overview } = require('./status');
 const { getSetting } = require('./settings');
 const { recordUsage } = require('./usage');
 const tools = require('./tools');
+const skills = require('./skills');
 
 const { HttpError } = storage;
 const MAX_TOOL_ROUNDS = 5;
@@ -110,13 +111,18 @@ function startAnswer(coreApi, { user, root, chatId, think, limits }) {
       while (history.length && history[history.length - 1].role !== 'user') history.pop();
       if (!history.length) throw new HttpError(400, 'no_question', 'There is no question to answer.');
       // Tools take room too: their descriptions, and what they answer.
-      const available = caps.includes('tools') ? await tools.forUser(coreApi, user) : [];
+      // Skills come with tools: only a model that can use tools can load them.
+      const skillSet = caps.includes('tools')
+        ? await skills.forAnswer(coreApi.pool).catch(() => { console.error('[ai] could not read the skills'); return { prompt: '', tools: [] }; })
+        : { prompt: '', tools: [] };
+      const available = caps.includes('tools') ? [...await tools.forUser(coreApi, user), ...skillSet.tools] : [];
       const toolDefs = available.map(t => ({ type: 'function', function: t.definition }));
       const toolReserve = available.length
         ? await context.countTokens(o.cfg, o.vllm.modelId, JSON.stringify(toolDefs)) + TOOL_PROMPT_OVERHEAD + TOOL_RESULT_RESERVE : 0;
+      const fullSystem = [system, available.length ? TOOL_RULE : '', skillSet.prompt].filter(Boolean).join('\n\n').trim();
       const built = await context.build(
         { cfg: o.cfg, modelId: o.vllm.modelId, root, chatId, vision: caps.includes('vision'), maxModelLen, tools: available.length > 0 },
-        history, { system: available.length ? `${system}\n\n${TOOL_RULE}`.trim() : system, answerReserve: maxTokens + toolReserve });
+        history, { system: fullSystem, answerReserve: maxTokens + toolReserve });
       built.notices.forEach(n => gens.notice(g, n));
       if (g.abort.signal.aborted) throw new Error('aborted');
 
@@ -163,7 +169,9 @@ function startAnswer(coreApi, { user, root, chatId, think, limits }) {
           calls += 1;
           const res = calls > MAX_TOOL_CALLS
             ? { ok: false, text: 'Error: too many tool calls for one answer.' }
-            : await tools.call(available, c.name, c.arguments, { root, chatId, history, limits, created: g.files });
+            : await tools.call(available, c.name, c.arguments, {
+              root, chatId, history, limits, created: g.files, pool: coreApi.pool, userId: user.id, answerId: assistantId, keyword
+            });
           let text = res.text;
           const budget = Math.max(200, Math.floor(room * 2)); // characters; about 3 per token
           if (text.length > budget) text = `${text.slice(0, budget)}\n(cut: no more room)`;
