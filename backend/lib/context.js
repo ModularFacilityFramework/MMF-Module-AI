@@ -56,8 +56,14 @@ async function prepare(ctx, m) {
     }
     if (meta.kind === 'image') {
       if (!ctx.vision) {
-        files.push({ name: meta.name, text: '(an image, which this model cannot see)', tokens: 20 });
-        tokens += 20;
+        // The model cannot see images: give it the OCR text when there is some.
+        const ocrText = meta.ocrChars
+          ? await fsp.readFile(storage.filePath(ctx.root, ctx.chatId, meta, '.text'), 'utf8').catch(() => '')
+          : '';
+        const text = ocrText ? `(an image, which this model cannot see; text read from it by OCR, may contain errors:)\n${ocrText}` : '(an image, which this model cannot see)';
+        const t = ocrText ? await countTokens(ctx.cfg, ctx.modelId, text) + 30 : 20;
+        files.push({ name: meta.name, text, tokens: t });
+        tokens += t;
       } else {
         const t = imageTokens(meta);
         images.push({ path: storage.filePath(ctx.root, ctx.chatId, meta, '.model.jpg'), tokens: t });

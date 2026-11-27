@@ -57,9 +57,10 @@ function release() {
 
 const safeName = n => String(n || 'file').split(/[\\/]/).pop().replace(/[^\w.+-]/g, '_').replace(/^\.+/, '').slice(-120) || 'file';
 
-// code: the Python program. inputs: [{ name, src }] copied to /work/in/<name>.
+// code: a Python program, or argv: a program of the system (/usr) and its
+// arguments (for OCR). inputs: [{ name, src }] copied to /work/in/<name>.
 // -> { exitCode, timedOut, stdout, stderr, outputs: [{ name, data }] }
-async function run({ code, inputs = [], timeoutS = LIMITS.timeoutS }) {
+async function run({ code, argv, inputs = [], timeoutS = LIMITS.timeoutS, cpuQuota = LIMITS.cpuQuota, memory = LIMITS.memory }) {
   const a = available();
   if (!a.ok) throw new Error(a.why);
   await slot();
@@ -78,7 +79,8 @@ async function run({ code, inputs = [], timeoutS = LIMITS.timeoutS }) {
       await fsp.copyFile(i.src, path.join(work, 'in', n));
       await fsp.chmod(path.join(work, 'in', n), 0o400);
     }
-    await fsp.writeFile(path.join(work, 'main.py'), code, { mode: 0o600 });
+    if (!argv) await fsp.writeFile(path.join(work, 'main.py'), code, { mode: 0o600 });
+    const program = argv || [PYTHON, '-I', '/work/main.py'];
 
     const bwrap = [
       'bwrap', '--unshare-all', '--die-with-parent', '--new-session',
@@ -87,12 +89,12 @@ async function run({ code, inputs = [], timeoutS = LIMITS.timeoutS }) {
       '--bind', work, '/work', '--ro-bind', path.join(work, 'in'), '/work/in', '--chdir', '/work',
       '--clearenv', '--setenv', 'HOME', '/work', '--setenv', 'PATH', '/usr/bin', '--setenv', 'MPLCONFIGDIR', '/work/.mpl',
       '--setenv', 'MPLBACKEND', 'Agg', '--setenv', 'OPENBLAS_NUM_THREADS', '2', '--setenv', 'OMP_NUM_THREADS', '2', '--setenv', 'PYTHONDONTWRITEBYTECODE', '1',
-      '--', '/usr/bin/prlimit', `--cpu=${timeoutS}`, `--fsize=${LIMITS.fileBytes}`, '--', PYTHON, '-I', '/work/main.py'
+      '--', '/usr/bin/prlimit', `--cpu=${timeoutS * Math.max(1, parseInt(cpuQuota, 10) / 100)}`, `--fsize=${LIMITS.fileBytes}`, '--', ...program
     ];
     const uid = process.getuid();
     const [cmd, ...args] = a.scope
-      ? ['systemd-run', '--user', '--scope', '--quiet', '--collect', '-p', `MemoryMax=${LIMITS.memory}`, '-p', 'MemorySwapMax=0',
-        '-p', `TasksMax=${LIMITS.tasks}`, '-p', `CPUQuota=${LIMITS.cpuQuota}`, '-p', `RuntimeMaxSec=${timeoutS + 5}`, '--', ...bwrap]
+      ? ['systemd-run', '--user', '--scope', '--quiet', '--collect', '-p', `MemoryMax=${memory}`, '-p', 'MemorySwapMax=0',
+        '-p', `TasksMax=${LIMITS.tasks}`, '-p', `CPUQuota=${cpuQuota}`, '-p', `RuntimeMaxSec=${timeoutS + 5}`, '--', ...bwrap]
       : bwrap;
     const env = { PATH: '/usr/bin:/bin', XDG_RUNTIME_DIR: `/run/user/${uid}`, DBUS_SESSION_BUS_ADDRESS: `unix:path=/run/user/${uid}/bus` };
     const result = await new Promise((resolve) => {

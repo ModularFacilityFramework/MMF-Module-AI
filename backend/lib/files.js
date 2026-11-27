@@ -138,6 +138,17 @@ async function ingest({ root, chatId, tmpPath, name, limits }) {
       const reduced = storage.filePath(root, chatId, meta, '.model.jpg');
       created.push(reduced);
       Object.assign(meta, await reduceImage(original, reduced));
+      // OCR text of a photo or scan of a document, for models that cannot see
+      // images (and for search); a picture without text gets none.
+      try {
+        const ocrText = await require('./ocr').image(original, fileName);
+        if (require('./ocr').meaningful(ocrText)) {
+          const textFile = storage.filePath(root, chatId, meta, '.text');
+          created.push(textFile);
+          await fsp.writeFile(textFile, ocrText.slice(0, TEXT_MAX_CHARS), { mode: 0o600 });
+          meta.ocrChars = Math.min(ocrText.length, TEXT_MAX_CHARS);
+        }
+      } catch (err) { /* no OCR: the image itself is still there */ }
     } else {
       let truncated = false;
       if (kind === 'mtz') {
@@ -155,10 +166,20 @@ async function ingest({ root, chatId, tmpPath, name, limits }) {
         text = text.slice(0, TEXT_MAX_CHARS);
         truncated = true;
       }
-      const plain = text.replace(/\[(Page|Slide) \d+\]/g, '').trim();
+      let plain = text.replace(/\[(Page|Slide) \d+\]/g, '').trim();
+      if (!plain && kind === 'pdf') {
+        // A scan: read the pages with OCR (the first ocr.MAX_PAGES pages).
+        const ocr = require('./ocr');
+        const ocrText = await ocr.pdf(original, fileName).catch(() => '');
+        if (ocrText.trim()) {
+          text = `[Text read by OCR from a scanned PDF (first ${ocr.MAX_PAGES} pages at most); it may contain errors.]\n${ocrText}`;
+          plain = ocrText.trim();
+          meta.ocr = true;
+        }
+      }
       if (!plain) {
         throw new HttpError(422, 'no_text', kind === 'pdf'
-          ? 'No text was found in this PDF. It may be a scan: upload the pages as images instead.'
+          ? 'No text was found in this PDF, not even by OCR. Upload the pages as images instead.'
           : 'No text was found in this file.');
       }
       const textFile = storage.filePath(root, chatId, meta, '.text');

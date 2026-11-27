@@ -14,7 +14,7 @@ const TOOLS = [
   { name: 'PDB: official PDBe MCP servers (EMBL-EBI): PDBe API and PDBe Search', status: 'tested', note: 'pdbe-mcp-server 2.0.1 on the backend host (127.0.0.1); tested 27/11/2026.' },
   { name: 'Literature and bio databases: BioMCP (PubMed, Europe PMC, PubTator3, UniProt, InterPro, STRING, PDB, AlphaFold, ...)', status: 'tested', note: 'biomcp-cli 0.9.3 (MIT) on the backend host (127.0.0.1); tested 27/11/2026.' },
   { name: 'gemmi: read MTZ, mmCIF, PDB and map files', status: 'tested', note: 'Tool read_structure_file (in the sandbox), MTZ uploads summarised by gemmi, and gemmi inside run_python; tested 27/11/2026.' },
-  { name: 'OCR: scanned PDFs and photos of documents to text', status: 'planned', note: '' },
+  { name: 'OCR: scanned PDFs and photos of documents to text', status: 'tested', note: 'At upload, in the sandbox: ocrmypdf (Tesseract) for scanned PDFs (first 30 pages), Tesseract for images (used by models that cannot see images); vision models also read photos themselves; tested 27/11/2026.' },
   { name: 'Code sandbox: Python with numpy, scipy, pandas, matplotlib, biopython, gemmi, rdkit; charts in the chat', status: 'tested', note: 'Tool run_python: bubblewrap (no network, only the chat files handed in) in a cgroup (2 GB, 64 processes, 2 CPUs, 60 s); tested 27/11/2026.' },
   { name: 'Speech to text (Whisper) with a microphone button', status: 'planned', note: 'On the AI server next to the model, if memory allows.' },
   { name: 'MFF docs: index, search and read', status: 'tested', note: 'Tools below (MFF docs); tested 26/11/2026. The AI looks there first for questions about MFF, a module or a procedure. Which doc is for whom: INDEX.json in the docs, else user guides for everyone and the rest for developers.' },
