@@ -3,9 +3,12 @@
 // user 26/11/2026). Called as the asking user, never as anyone else, and each
 // answer is made only from that user's own result (nothing is cached).
 // The slurm module decides what each person may see, for the person asking:
-// a normal user gets only their own jobs and anonymous totals; facility staff
-// and developers also get other jobs and per-node detail. This module never
-// widens that, and calls only these GET routes.
+// a normal user gets only their own jobs and anonymous totals; its staff roles
+// also get other jobs and per-node detail. This module never widens that, and
+// narrows it to the AI's levels (the user's rule, 27/11/2026): at the Standard
+// level only the person's own jobs and per-partition totals, even for someone
+// the slurm module counts as staff; every job and per-node detail only at the
+// Advanced level. It calls only these GET routes.
 const MAX_JOBS = 60;
 
 // By status only: the body of an error answer may not reach us.
@@ -38,18 +41,19 @@ const TOOLS = [
   {
     key: 'slurm_queue',
     name: 'Slurm: my jobs in the queue',
-    what: 'Lets the AI see your own jobs in the Slurm queue (running and waiting, with the reason) and how busy the cluster is overall. Facility staff and developers can ask about all jobs.',
+    what: 'Lets the AI see your own jobs in the Slurm queue (running and waiting, with the reason) and how busy the cluster is overall. At the advanced level it can also list every user\'s jobs.',
     example: 'Why is my job still pending?',
-    sees: 'Your own Slurm jobs and anonymous totals; all jobs for facility staff and developers (decided by the Slurm module).',
+    sees: 'Your own Slurm jobs and anonymous cluster totals; every user\'s jobs only at the advanced level (and only if the Slurm module allows it).',
     risk: 'reads your MFF data',
     status: 'done',
     definition: {
       name: 'slurm_queue',
-      description: 'The Slurm queue: the asking user\'s own jobs (id, name, state, reason, partition, GPUs, CPUs, memory, times as Unix epoch seconds) and cluster totals. Set all=true only when a facility staff member asks about every user\'s jobs.',
+      description: 'The Slurm queue: the asking user\'s own jobs (id, name, state, reason, partition, GPUs, CPUs, memory, times as Unix epoch seconds) and cluster totals. all=true (every user\'s jobs) works only at the advanced level.',
       parameters: { type: 'object', properties: { all: { type: 'boolean', description: 'Every job, not only the asker\'s (facility staff and developers only)' } } }
     },
     run: async (args, ctx) => {
       const all = args.all === true;
+      if (all && ctx.level !== 'advanced') throw new Error('every user\'s jobs can only be listed at the advanced level (developers and administrators); here you can see your own jobs');
       const data = await get(ctx, '/external/queue', { scope: all ? 'all' : 'own' }, all ? 'all' : 'own');
       const jobs = Array.isArray(data && data.jobs) ? data.jobs : [];
       const shown = jobs.slice(0, MAX_JOBS);
@@ -65,7 +69,7 @@ const TOOLS = [
     name: 'Slurm: state of a job',
     what: 'Lets the AI look up the state of one Slurm job by its number: running, pending (and why), finished, failed, its exit code and times.',
     example: 'What happened to job 123456?',
-    sees: 'Your own jobs only; any job for facility staff and developers.',
+    sees: 'Your own jobs; other jobs only if the Slurm module allows it for your roles (state and times, no owner).',
     risk: 'reads your MFF data',
     status: 'done',
     definition: {
@@ -82,9 +86,9 @@ const TOOLS = [
   {
     key: 'slurm_cluster',
     name: 'Slurm: state of the cluster',
-    what: 'Lets the AI see how busy the cluster is: per partition, which nodes are up or down and how many GPUs and CPUs are free. Facility staff and developers also see each node.',
+    what: 'Lets the AI see how busy the cluster is: per partition, which nodes are up or down and how many GPUs and CPUs are free. At the advanced level it also sees each node.',
     example: 'Are there free GPUs right now?',
-    sees: 'Per-partition totals; per-node detail for facility staff and developers.',
+    sees: 'Per-partition totals; per-node detail (names, state reasons) only at the advanced level.',
     risk: 'reads your MFF data',
     status: 'done',
     definition: {
@@ -92,7 +96,12 @@ const TOOLS = [
       description: 'State of the Slurm cluster: per partition the node states and free/total GPUs and CPUs (per node for staff).',
       parameters: { type: 'object', properties: {} }
     },
-    run: async (args, ctx) => `${compact(await get(ctx, '/external/cluster-state', null, 'cluster'))}\n${NOTE}`
+    run: async (args, ctx) => {
+      const data = await get(ctx, '/external/cluster-state', null, 'cluster');
+      // per-node detail (host names, state reasons) only at the advanced level
+      const shown = ctx.level === 'advanced' ? data : { ...data, nodes: undefined };
+      return `${compact(shown)}\n${NOTE}`;
+    }
   }
 ];
 
