@@ -53,7 +53,11 @@ const TOOLS = [
       const data = await get(ctx, '/external/queue', { scope: all ? 'all' : 'own' }, all ? 'all' : 'own');
       const jobs = Array.isArray(data && data.jobs) ? data.jobs : [];
       const shown = jobs.slice(0, MAX_JOBS);
-      return `${compact({ ...data, jobs: shown })}${jobs.length > shown.length ? `\n(${jobs.length - shown.length} more jobs not shown)` : ''}\n${NOTE}`;
+      // Named so the model cannot take the cluster's totals for the person's own jobs.
+      const { totals, jobs: _drop, ...rest } = data || {};
+      const out = { ...rest, [all ? 'jobsOfAllUsers' : 'yourJobs']: shown, [all ? 'jobsListed' : 'yourJobCount']: jobs.length, clusterTotalsAllUsers: totals };
+      return `${compact(out)}${jobs.length > shown.length ? `\n(${jobs.length - shown.length} more jobs not shown)` : ''}\n`
+        + `clusterTotalsAllUsers counts every user's jobs on the cluster, not only ${all ? 'those listed' : 'yours'}.\n${NOTE}`;
     }
   },
   {

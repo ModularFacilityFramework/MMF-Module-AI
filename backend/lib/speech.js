@@ -18,12 +18,11 @@ const recent = new Map(); // user id -> timestamps
 async function allowed(coreApi, user) {
   const cfg = require('./config').readConfig(coreApi);
   if (!cfg.whisperUrl) return false;
-  const settings = await safety.getSettings(coreApi.pool);
-  const level = await safety.levelFor(coreApi, user, settings);
+  const level = await safety.levelFor(coreApi, user);
   const state = (await tools.getState(coreApi.pool).catch(() => ({}))).speech_to_text;
   if (!state || !state.enabled) return false;
   const roles = await coreApi.getUserRoles(user);
-  return (!state.roles.length || state.roles.some(r => roles.includes(r))) && safety.allowed(state.audience || 'user', level);
+  return (!state.roles.length || state.roles.some(r => roles.includes(r))) && safety.allowed(state.audience || 'standard', level);
 }
 
 async function transcribe(coreApi, user, audio, { language } = {}) {

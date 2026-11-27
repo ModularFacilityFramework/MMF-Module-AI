@@ -56,7 +56,12 @@ function Microphone({ api, disabled, onText, onError }) {
   );
 }
 
-function Composer({ coreApi, chatId, limits, speech, model, think, setThink, answering, ready, onSend, onStop, ensureChat, handOver, takeHandOver, onError }) {
+const LEVEL_HELP = {
+  standard: 'Standard level: the AI uses service tools that give it only your own, filtered data, never direct database or server access.',
+  advanced: 'Advanced level (developers and administrators): every tool, including direct database and server tools.'
+};
+
+function Composer({ coreApi, chatId, limits, speech, level, model, think, setThink, answering, ready, onSend, onStop, ensureChat, handOver, takeHandOver, onError }) {
   const { api } = coreApi;
   const [saved, setSaved, resetSaved] = coreApi.usePageState(draftKey(chatId), EMPTY, validDraft);
   const [draft, setDraftState] = useState(saved);
@@ -240,6 +245,7 @@ function Composer({ coreApi, chatId, limits, speech, model, think, setThink, ans
         )}
         {caps.includes('thinking-r1') && <span className={css.muted}>This model always thinks first</span>}
         <span className={css.spacer} />
+        {level && <span className={css.muted} data-testid="ai-level" title={LEVEL_HELP[level]}>{level === 'advanced' ? 'Advanced level' : 'Standard level'} ·</span>}
         <span className={css.muted}>{model ? model.label : ''}</span>
         {answering
           ? <button type="button" className={css.stop} onClick={onStop}>Stop</button>

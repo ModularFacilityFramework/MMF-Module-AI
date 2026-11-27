@@ -237,13 +237,20 @@ async function readAttached(args, ctx) {
   return `${name}, characters ${start} to ${end} of ${text.length}${end < text.length ? ` (continue with start=${end})` : ' (end of file)'}:\n${part}`;
 }
 
+const kindOf = t => (t && t.kind === 'direct' ? 'direct' : 'service');
+// The level a tool is offered at: a direct tool is always advanced.
+const levelOf = (t, s) => (kindOf(t) === 'direct' ? 'advanced' : safety.norm((s && s.audience) || 'standard'));
+
 // The built-in tools and every tool of the switched-on MCP servers (mcp.js).
 async function catalogue(pool) {
   const extra = await mcp.entries(pool).catch(() => []);
   return [...CATALOGUE, ...extra];
 }
 
-// Saved state: { key: { enabled, roles: [], audience: 'user'|'staff'|'developer' } }.
+// Saved state: { key: { enabled, roles: [], audience: 'standard'|'advanced' } }.
+// Each tool is also, in code, either 'direct' (direct access to a database or
+// server: advanced only, whatever the setting says) or 'service' (returns the
+// asker's own, filtered data, or public data: standard or advanced, as set).
 // Present = installed.
 async function getState(pool) {
   const s = await getSetting(pool, 'tools', {});
@@ -261,7 +268,7 @@ async function change(coreApi, key, body, userId) {
   if (action === 'install') {
     if (state[key]) throw new storage.HttpError(409, 'installed', 'This tool is already installed.');
     const tool = (await catalogue(coreApi.pool)).find(t => t.key === key);
-    state[key] = { enabled: true, roles: [], audience: (tool && tool.minAudience) || 'user' };
+    state[key] = { enabled: true, roles: [], audience: kindOf(tool) === 'direct' ? 'advanced' : 'standard' };
   } else {
     if (!state[key]) throw new storage.HttpError(409, 'not_installed', 'This tool is not installed.');
     if (action === 'remove') delete state[key];
@@ -270,10 +277,10 @@ async function change(coreApi, key, body, userId) {
       const roles = await coreApi.listRoles();
       state[key] = { ...state[key], roles: [...new Set(Array.isArray(body.roles) ? body.roles : [])].filter(r => roles.includes(r)) };
     } else if (action === 'audience') {
-      if (!safety.LEVELS.includes(body.audience)) throw new storage.HttpError(400, 'bad_audience', 'Choose who the tool is for.');
+      if (!safety.LEVELS.includes(body.audience)) throw new storage.HttpError(400, 'bad_audience', 'Choose the level: standard or advanced.');
       const tool = (await catalogue(coreApi.pool)).find(t => t.key === key);
-      if (tool && tool.minAudience && safety.LEVELS.indexOf(body.audience) < safety.LEVELS.indexOf(tool.minAudience)) {
-        throw new storage.HttpError(400, 'audience_too_wide', 'This tool is for developers and administrators only (the user\'s rule).');
+      if (kindOf(tool) === 'direct' && body.audience !== 'advanced') {
+        throw new storage.HttpError(400, 'direct_tool', 'This is a direct tool (database or server access): it is for the advanced level only (the user\'s rule).');
       }
       state[key] = { ...state[key], audience: body.audience };
     } else throw new storage.HttpError(400, 'bad_action', 'Unknown action.');
@@ -285,14 +292,12 @@ async function change(coreApi, key, body, userId) {
 
 // The tools this person's question may use, as the model sees them: switched
 // on, for one of their roles, and for their audience level (safety.js).
-async function forUser(coreApi, user, level = 'user') {
+async function forUser(coreApi, user, level = 'standard') {
   const state = await getState(coreApi.pool).catch(() => ({}));
   const roles = await coreApi.getUserRoles(user);
   return (await catalogue(coreApi.pool)).filter((t) => {
     const s = state[t.key];
-    // a tool's minimum audience (databases: developers) always wins over its setting
-    const audience = t.minAudience && safety.LEVELS.indexOf(t.minAudience) > safety.LEVELS.indexOf(s ? s.audience || 'user' : 'user') ? t.minAudience : (s && s.audience) || 'user';
-    return t.definition && s && s.enabled && (!s.roles.length || s.roles.some(r => roles.includes(r))) && safety.allowed(audience, level);
+    return t.definition && s && s.enabled && (!s.roles.length || s.roles.some(r => roles.includes(r))) && safety.allowed(levelOf(t, s), level);
   });
 }
 
@@ -315,6 +320,9 @@ async function call(available, name, rawArgs, ctx) {
   }
 }
 
-const card = ({ key, name, what, example, sees, risk, needs, status, mcp: m }) => ({ key, name, what, example, sees, risk, needs: needs || null, status: status || 'tested', mcp: m || null });
+const card = t => ({
+  key: t.key, name: t.name, what: t.what, example: t.example, sees: t.sees, risk: t.risk, needs: t.needs || null,
+  status: t.status || 'tested', mcp: t.mcp || null, kind: kindOf(t), forModel: Boolean(t.definition)
+});
 
-module.exports = { CATALOGUE, UNAVAILABLE, catalogue, getState, change, forUser, call, card };
+module.exports = { CATALOGUE, UNAVAILABLE, catalogue, getState, change, forUser, call, card, kindOf, levelOf };

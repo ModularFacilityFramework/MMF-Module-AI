@@ -8,7 +8,7 @@
 // reference file with read_skill_file. So only models that can use tools use
 // skills; the others answer without them.
 const { HttpError } = require('./storage');
-const { LEVELS } = require('./safety');
+const { LEVELS, norm } = require('./safety');
 
 const NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const FILE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
@@ -71,7 +71,7 @@ function check({ content, tag, files, audience }) {
   if (!p.description) throw new HttpError(400, 'no_description', 'The description is missing: it tells the AI when to use the skill.');
   if (p.description.length > MAX.description) throw new HttpError(400, 'bad_description', `The description is longer than ${MAX.description} characters.`);
   if (!p.body) throw new HttpError(400, 'no_body', 'The steps are missing: write them below the frontmatter.');
-  const cleanAudience = LEVELS.includes(audience) ? audience : 'user';
+  const cleanAudience = LEVELS.includes(norm(audience)) ? norm(audience) : 'standard';
   const cleanTag = tag === null || tag === undefined || tag === '' ? null : String(tag).trim().toLowerCase();
   if (cleanTag !== null && !TAG_RE.test(cleanTag)) throw new HttpError(400, 'bad_tag', 'A module tag is lowercase letters, digits, "-" or "_", at most 32 characters.');
   const list = Array.isArray(files) ? files : [];
@@ -94,7 +94,7 @@ function check({ content, tag, files, audience }) {
 }
 
 const row = r => ({
-  id: Number(r.id), name: r.name, description: r.description, tag: r.module_tag || null, audience: r.audience || 'user', enabled: Boolean(r.enabled),
+  id: Number(r.id), name: r.name, description: r.description, tag: r.module_tag || null, audience: norm(r.audience), enabled: Boolean(r.enabled),
   updatedAt: r.updated_at, updatedBy: r.updated_by === null ? null : Number(r.updated_by)
 });
 
@@ -183,8 +183,9 @@ async function logUse(ctx, skill, file) {
 // What one answer gets: the text for the system prompt and the two tools,
 // with only the skills meant for the asker's level (safety.js). Read once per
 // answer, so the list and the tools agree.
-async function forAnswer(pool, level = 'user') {
-  const levels = LEVELS.slice(0, LEVELS.indexOf(level) + 1);
+async function forAnswer(pool, level = 'standard') {
+  // stored values of both the old and the new levels
+  const levels = norm(level) === 'advanced' ? ['user', 'standard', 'staff', 'developer', 'advanced'] : ['user', 'standard'];
   const rows = await pool.query(
     `SELECT s.id, s.name, s.description, COUNT(f.id) AS files
        FROM ai_skills s LEFT JOIN ai_skill_files f ON f.skill_id = s.id

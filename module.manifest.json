@@ -1,7 +1,7 @@
 {
   "id": "ai",
   "label": "AI",
-  "version": "0.1.29",
+  "version": "0.1.30",
   "tablePrefix": "ai_",
   "mountPath": "/ai",
   "backendEntry": "backend/index.js",
@@ -98,6 +98,26 @@
     {
       "key": "MARIADB_RO_PASSWORD",
       "description": "Optional. That account's password."
+    },
+    {
+      "key": "MSSQL_RO_HOST",
+      "description": "Optional. Host of the MSSQL server for the read-only database tool (advanced level only), default 127.0.0.1."
+    },
+    {
+      "key": "MSSQL_RO_PORT",
+      "description": "Optional. Its port, default 1433."
+    },
+    {
+      "key": "MSSQL_RO_USER",
+      "description": "Optional. The dedicated read-only MSSQL login created for the AI (db_datareader only)."
+    },
+    {
+      "key": "MSSQL_RO_PASSWORD",
+      "description": "Optional. That login's password."
+    },
+    {
+      "key": "MSSQL_RO_DATABASE",
+      "description": "Optional. The default database for that login."
     }
   ]
 }

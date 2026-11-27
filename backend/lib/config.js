@@ -83,7 +83,7 @@ function configStatus(coreApi) {
   const cfg = coreApi.getModuleConfig() || {};
   const parsed = readConfig(coreApi);
   return {
-    keys: REQUIRED_KEYS.concat(['GUARD_URL', 'DOCS_DIR', 'SEARXNG_URL', 'WHISPER_URL', 'MARIADB_RO_HOST', 'MARIADB_RO_PORT', 'MARIADB_RO_USER', 'MARIADB_RO_PASSWORD', 'VLLM_API_KEY', 'CTL_SSH_PORT', 'STORAGE_SUBDIR', 'REQUEST_TIMEOUT_S', 'SWITCH_TIMEOUT_S'])
+    keys: REQUIRED_KEYS.concat(['GUARD_URL', 'DOCS_DIR', 'SEARXNG_URL', 'WHISPER_URL', 'MARIADB_RO_HOST', 'MARIADB_RO_PORT', 'MARIADB_RO_USER', 'MARIADB_RO_PASSWORD', 'MSSQL_RO_HOST', 'MSSQL_RO_PORT', 'MSSQL_RO_USER', 'MSSQL_RO_PASSWORD', 'MSSQL_RO_DATABASE', 'VLLM_API_KEY', 'CTL_SSH_PORT', 'STORAGE_SUBDIR', 'REQUEST_TIMEOUT_S', 'SWITCH_TIMEOUT_S'])
       .map(key => ({ key: `MODULE_AI_${key}`, required: REQUIRED_KEYS.includes(key), set: Boolean(cfg[key]) })),
     missing: parsed.missing.map(k => `MODULE_AI_${k}`),
     models: parsed.models,

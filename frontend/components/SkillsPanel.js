@@ -19,7 +19,9 @@ const validSections = v => Boolean(v) && typeof v.uses === 'boolean' && typeof v
 const validDraft = v => v === null || (Boolean(v) && Number.isInteger(v.id) && typeof v.content === 'string'
   && typeof v.tag === 'string' && typeof v.enabled === 'boolean' && Array.isArray(v.files)
   && v.files.every(f => f && typeof f.name === 'string' && (typeof f.content === 'string' || typeof f.from === 'string')));
-const AUDIENCE = { user: 'everyone', staff: 'facility staff', developer: 'developers' };
+// The two AI levels; earlier stored values are read as one of them.
+const AUDIENCE = { standard: 'standard (everyone)', advanced: 'advanced (developers and administrators)' };
+const levelOf = a => (['staff', 'developer', 'developer-admin', 'advanced'].includes(a) ? 'advanced' : 'standard');
 const PAGE_STATE_MAX = 60000; // core keeps at most 64 KB per value
 const mono = { fontFamily: 'SFMono-Regular, Consolas, monospace', fontSize: '12px' };
 const when = at => new Date(at).toLocaleString();
@@ -85,7 +87,7 @@ function Editor({ api, data, draft, setDraft, resetDraft, tooBig, readOnly, relo
     if (files.some(f => f.content === undefined)) { setError('The saved files are still loading. Try again in a moment.'); return; }
     setBusy(true);
     try {
-      const body = { content: draft.content, tag: draft.tag, audience: draft.audience || 'user', enabled: draft.enabled, files };
+      const body = { content: draft.content, tag: draft.tag, audience: levelOf(draft.audience), enabled: draft.enabled, files };
       if (draft.id) await api.put(`/ai/setup/skills/${draft.id}`, body);
       else await api.post('/ai/setup/skills', body);
       setError('');
@@ -113,8 +115,8 @@ function Editor({ api, data, draft, setDraft, resetDraft, tooBig, readOnly, relo
         </label>
         <datalist id="ai-skill-tags">{tags.map(t => <option key={t} value={t} />)}</datalist>
         <label style={{ marginLeft: '14px' }}>
-          For{' '}
-          <select style={S.field} aria-label="Audience" disabled={readOnly} value={draft.audience || 'user'} onChange={e => setDraft(d => ({ ...d, audience: e.target.value }))}>
+          Level{' '}
+          <select style={S.field} aria-label="Audience" disabled={readOnly} value={levelOf(draft.audience)} onChange={e => setDraft(d => ({ ...d, audience: e.target.value }))}>
             {Object.entries(AUDIENCE).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </select>
         </label>
@@ -232,11 +234,11 @@ function SkillsPanel({ coreApi }) {
           rows={shown}
           rememberAs="ai.setup.skills.list"
           columns={{
-            name: s => s.name, description: s => s.description, tag: s => s.tag, audience: s => AUDIENCE[s.audience] || 'everyone',
+            name: s => s.name, description: s => s.description, tag: s => s.tag, audience: s => levelOf(s.audience),
             files: { value: s => s.files.length, type: 'number' }, state: s => (s.enabled ? 'on' : 'off')
           }}
           head={[
-            { key: 'name', label: 'Skill' }, { key: 'description', label: 'When the AI uses it' }, { key: 'tag', label: 'Tag' }, { key: 'audience', label: 'For' },
+            { key: 'name', label: 'Skill' }, { key: 'description', label: 'When the AI uses it' }, { key: 'tag', label: 'Tag' }, { key: 'audience', label: 'Level' },
             { key: 'files', label: 'Files' }, { key: 'state', label: 'State' }, { key: 'actions', label: '' }
           ]}
           rowKey={s => s.id}
@@ -245,7 +247,7 @@ function SkillsPanel({ coreApi }) {
                   <td style={{ ...S.td, ...mono }}>{s.name}</td>
                   <td style={S.td}>{s.description}</td>
                   <td style={S.td}>{s.tag || '-'}</td>
-                  <td style={S.td}>{AUDIENCE[s.audience] || 'everyone'}</td>
+                  <td style={S.td}>{AUDIENCE[levelOf(s.audience)]}</td>
                   <td style={S.td}>{s.files.length || '-'}</td>
                   <td style={S.td}><span style={S.chip(s.enabled ? S.GREEN : S.GREY)}>{s.enabled ? 'on' : 'off'}</span></td>
                   <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
@@ -304,7 +306,7 @@ function EditorLoader(props) {
     let alive = true;
     api.get(`/ai/setup/skills/${draft.id}`).then((r) => {
       const s = r.data.skill;
-      if (alive) setDraft({ id: s.id, content: s.content, tag: s.tag || '', audience: s.audience || 'user', enabled: s.enabled, files: s.files.map(f => ({ name: f.name, from: f.name })) });
+      if (alive) setDraft({ id: s.id, content: s.content, tag: s.tag || '', audience: levelOf(s.audience), enabled: s.enabled, files: s.files.map(f => ({ name: f.name, from: f.name })) });
     }).catch((err) => {
       if (!alive) return;
       if (err.response?.status === 404) resetDraft(); // deleted meanwhile: nothing to show

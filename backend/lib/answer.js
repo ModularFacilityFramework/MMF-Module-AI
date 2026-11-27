@@ -141,7 +141,7 @@ function startAnswer(coreApi, { user, root, chatId, think, limits }) {
 
       // --- safety and scope (safety.js), before anything reaches the model ---
       const sset = await safety.getSettings(coreApi.pool);
-      const level = await safety.levelFor(coreApi, user, sset);
+      const level = await safety.levelFor(coreApi, user);
       const pol = safety.policy(sset, level);
       if (pol.scan) g.scan = safety.redactor(o.cfg, sset);
       const question = history[history.length - 1].text || '';

@@ -1,5 +1,5 @@
 // Setup -> Safety: the guard model, the scope check and the output scan, who
-// counts as facility staff, and what the checks did. Persisted per user: the
+// the levels, and what the checks did. Persisted per user: the
 // unsaved settings (ai.setup.safety.draft), the period (ai.setup.safety.days)
 // and the open sections (ai.setup.safety.sections).
 import React, { useCallback, useEffect, useState } from 'react';
@@ -7,7 +7,9 @@ import SortedTable from './SortedTable';
 import * as S from './styles';
 
 const text = err => err.response?.data?.error || 'That did not work. Try again.';
-const validDraft = v => v === null || (Boolean(v) && typeof v === 'object' && Array.isArray(v.staffRoles) && Array.isArray(v.hosts));
+const validDraft = v => v === null || (Boolean(v) && typeof v === 'object' && Array.isArray(v.hosts));
+// Levels in older log rows (three levels until 27/11/2026) shown as the two current ones.
+const levelName = l => (['staff', 'developer', 'advanced'].includes(l) ? 'Advanced' : 'Standard');
 const validSections = v => Boolean(v) && typeof v.events === 'boolean' && typeof v.counts === 'boolean';
 const RESULT = { blocked: S.RED, self_harm: 'warning', out_of_scope: S.GREY, error: 'warning', pass: S.GREEN };
 const RESULT_TEXT = { blocked: 'blocked', self_harm: 'self-harm: help given', out_of_scope: 'out of scope', error: 'check failed', pass: 'passed' };
@@ -55,7 +57,7 @@ function SafetyPanel({ coreApi }) {
         AI server, which blocks requests about weapons, hacking, terrorism and the like. A question about self-harm gets a kind answer
         with where to find help, never a bare refusal. The scope check keeps the AI to MFF, the facility and its servers, structural
         biology and scientific writing. The output scan hides internal addresses, server names and paths from normal users. Each tool
-        and skill is also marked for everyone, facility staff or developers, and the AI only gets what the asker may use. Developers and
+        and skill has a level (Standard or Advanced), and the AI only gets what the asker's level allows. Developers and
         administrators are not slowed down: no scope check or scan for them, and the guard only if switched on below. No question or
         answer text is kept by these checks: only what was decided and how long it took.
       </div>
@@ -67,8 +69,8 @@ function SafetyPanel({ coreApi }) {
       {error && <div style={S.errorBanner}>{error}</div>}
 
       <div style={S.heading}>Settings</div>
-      <Toggle label="Guard for normal users and facility staff" checked={v.guardUsers} disabled={ro} onChange={x => change({ guardUsers: x })} />
-      <Toggle label="Guard for developers and administrators" help="Adds the delay shown below to each answer; off by default." checked={v.guardDevelopers} disabled={ro} onChange={x => change({ guardDevelopers: x })} />
+      <Toggle label="Guard for the Standard level" checked={v.guardUsers} disabled={ro} onChange={x => change({ guardUsers: x })} />
+      <Toggle label="Guard for the Advanced level (developers and administrators)" help="Adds the delay shown below to each answer; off by default." checked={v.guardDevelopers} disabled={ro} onChange={x => change({ guardDevelopers: x })} />
       <div style={{ marginBottom: '8px', fontSize: '13px' }}>
         When the guard does not answer:{' '}
         <select style={S.field} aria-label="When the guard does not answer" disabled={ro} value={v.guardDown} onChange={e => change({ guardDown: e.target.value })}>
@@ -76,15 +78,11 @@ function SafetyPanel({ coreApi }) {
           <option value="answer">answer without it</option>
         </select>
       </div>
-      <Toggle label="Scope check for normal users and facility staff" help="Asks the loaded model whether a question is about MFF, the facility, its servers, structural biology or scientific writing." checked={v.scope} disabled={ro} onChange={x => change({ scope: x })} />
-      <Toggle label="Output scan for normal users and facility staff" help="Hides private IP addresses, server names and server paths in answers, thinking and tool results." checked={v.scan} disabled={ro} onChange={x => change({ scan: x })} />
-      <div style={{ fontSize: '13px', margin: '10px 0 4px' }}>Roles that count as facility staff (administrators and developers always count as developers):</div>
-      <div style={{ fontSize: '13px', marginBottom: '8px' }}>
-        {data.roles.map(r => (
-          <label key={r} style={{ marginRight: '14px', whiteSpace: 'nowrap' }}>
-            <input type="checkbox" disabled={ro} checked={v.staffRoles.includes(r)} onChange={e => change({ staffRoles: e.target.checked ? [...v.staffRoles, r] : v.staffRoles.filter(x => x !== r) })} /> {r.replace(/_/g, ' ')}
-          </label>
-        ))}
+      <Toggle label="Scope check for the Standard level" help="Asks the loaded model whether a question is about MFF, the facility, its servers, structural biology or scientific writing." checked={v.scope} disabled={ro} onChange={x => change({ scope: x })} />
+      <Toggle label="Output scan for the Standard level" help="Hides private IP addresses, server names and server paths in answers, thinking and tool results." checked={v.scan} disabled={ro} onChange={x => change({ scan: x })} />
+      <div style={{ ...S.small, margin: '10px 0' }}>
+        Levels come from core's roles: administrators and developers are at the Advanced level (every tool), everyone else at the Standard level
+        (service tools only: their own, filtered data; never direct database or server access).
       </div>
       <div style={{ fontSize: '13px', margin: '10px 0 4px' }}>More server names to hide from normal users (one per line; the AI server's own names are always hidden):</div>
       <textarea
@@ -115,14 +113,14 @@ function SafetyPanel({ coreApi }) {
           rows={data.delay}
           rememberAs="ai.setup.safety.delay"
           columns={{
-            level: d => (data.levels.find(l => l.key === d.level) || { label: d.level }).label,
+            level: d => levelName(d.level),
             answers: { value: d => d.answers, type: 'number' }, avg: { value: d => d.avgMs, type: 'number' }, max: { value: d => d.maxMs, type: 'number' }
           }}
           head={[{ key: 'level', label: 'Asker' }, { key: 'answers', label: 'Answers checked' }, { key: 'avg', label: 'Average added delay' }, { key: 'max', label: 'Longest' }]}
           rowKey={d => d.level}
           renderRow={d => (
                 <tr>
-                  <td style={S.td}>{(data.levels.find(l => l.key === d.level) || { label: d.level }).label}</td>
+                  <td style={S.td}>{levelName(d.level)}</td>
                   <td style={S.td}>{d.answers}</td><td style={S.td}>{(d.avgMs / 1000).toFixed(2)} s</td><td style={S.td}>{(d.maxMs / 1000).toFixed(2)} s</td>
                 </tr>
           )}

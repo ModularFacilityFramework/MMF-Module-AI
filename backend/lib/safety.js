@@ -5,28 +5,35 @@
 //     terrorism, ...); a question about self-harm gets a kind answer with help;
 //  2. the scope check: only MFF, the facility, its servers, structural biology
 //     and scientific writing; anything else gets a polite refusal;
-//  3. the audience: what each tool and skill is for (user, facility staff,
-//     developer), and the output scan, which hides internal addresses, host
-//     names and server paths in what normal users see.
+//  3. the level: two AI levels, decided by core's roles (the user's decision,
+//     27/11/2026). ADVANCED: developers and administrators - every tool,
+//     including direct database and server tools. STANDARD: everyone else -
+//     only service tools, which return the person's own, filtered data; never
+//     direct database, server or shell access. Each tool, skill and doc has a
+//     level; the output scan hides internal addresses, host names and server
+//     paths in what standard users see.
 // Developers are not slowed down: no scope check and no scan for them, and the
 // guard only when it is switched on for them on Setup -> Safety.
 const { getSetting, setSetting } = require('./settings');
 const { POLICY_ROLES } = require('./permissions');
 
-const LEVELS = ['user', 'staff', 'developer'];
-const LEVEL_LABEL = { user: 'everyone', staff: 'facility staff', developer: 'developers and administrators' };
+const LEVELS = ['standard', 'advanced'];
+const LEVEL_LABEL = { standard: 'Standard (everyone)', advanced: 'Advanced (developers and administrators)' };
+// Earlier values (three levels until 27/11/2026) are read safely: anything but
+// "everyone" becomes advanced.
+const LEGACY = { user: 'standard', standard: 'standard', staff: 'advanced', developer: 'advanced', 'developer-admin': 'advanced', advanced: 'advanced' };
+const norm = a => LEGACY[a] || 'standard';
 const GUARD_TIMEOUT_MS = 8000;
 const SCOPE_TIMEOUT_MS = 15000;
 const GUARD_MAX_CHARS = 12000; // the guard serves 8,192 tokens; keep well inside
 const ANSWER_CHECK_EVERY = 2000; // characters of new answer between checks while it is written
 
 const DEFAULTS = {
-  guardUsers: true,        // guard for normal users and facility staff
-  guardDevelopers: false,  // guard for developers and administrators
+  guardUsers: true,        // guard for the standard level
+  guardDevelopers: false,  // guard for the advanced level (developers and administrators)
   guardDown: 'refuse',     // guard configured but not answering: 'refuse' or 'answer'
-  scope: true,             // scope check for normal users and facility staff
-  scan: true,              // output scan for normal users and facility staff
-  staffRoles: [],          // core roles that count as facility staff
+  scope: true,             // scope check for the standard level
+  scan: true,              // output scan for the standard level
   hosts: []                // extra host names to hide from users
 };
 
@@ -50,33 +57,29 @@ async function getSettings(pool) {
 
 async function saveSettings(coreApi, body, userId) {
   const b = body || {};
-  const roles = await coreApi.listRoles();
   const clean = {
     guardUsers: b.guardUsers !== false,
     guardDevelopers: Boolean(b.guardDevelopers),
     guardDown: b.guardDown === 'answer' ? 'answer' : 'refuse',
     scope: b.scope !== false,
     scan: b.scan !== false,
-    staffRoles: [...new Set(Array.isArray(b.staffRoles) ? b.staffRoles : [])].filter(r => roles.includes(r) && !POLICY_ROLES.includes(r)),
     hosts: [...new Set((Array.isArray(b.hosts) ? b.hosts : []).map(h => String(h).trim()).filter(h => /^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$/.test(h)))].slice(0, 100)
   };
   await setSetting(coreApi.pool, 'safety', clean, userId);
   return clean;
 }
 
-// 'developer' (administrator or developer), 'staff' (a role chosen on
-// Setup -> Safety) or 'user'.
-async function levelFor(coreApi, user, settings) {
+// 'advanced' for core's administrator and developer roles, else 'standard'.
+// The roles come from core (security stays in core).
+async function levelFor(coreApi, user) {
   const roles = await coreApi.getUserRoles(user).catch(() => []);
-  if (roles.some(r => POLICY_ROLES.includes(r))) return 'developer';
-  if (roles.some(r => (settings.staffRoles || []).includes(r))) return 'staff';
-  return 'user';
+  return roles.some(r => POLICY_ROLES.includes(r)) ? 'advanced' : 'standard';
 }
 
-const allowed = (audience, level) => LEVELS.indexOf(level) >= LEVELS.indexOf(LEVELS.includes(audience) ? audience : 'user');
+const allowed = (audience, level) => LEVELS.indexOf(norm(level)) >= LEVELS.indexOf(norm(audience));
 
 function policy(settings, level) {
-  const dev = level === 'developer';
+  const dev = norm(level) === 'advanced';
   return {
     guard: dev ? settings.guardDevelopers : settings.guardUsers,
     scope: !dev && settings.scope,
@@ -220,6 +223,6 @@ async function log(pool, row) {
 }
 
 module.exports = {
-  LEVELS, LEVEL_LABEL, DEFAULTS, TEXT, ANSWER_CHECK_EVERY,
+  LEVELS, LEVEL_LABEL, norm, DEFAULTS, TEXT, ANSWER_CHECK_EVERY,
   getSettings, saveSettings, levelFor, allowed, policy, guard, guardStatus, isSelfHarm, isUnsafe, scope, redactor, log
 };

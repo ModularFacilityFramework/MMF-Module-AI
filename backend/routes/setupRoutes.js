@@ -285,7 +285,10 @@ module.exports = function buildSetupRouter(coreApi) {
     const docList = await docs.overview(coreApi, cfg).catch(() => null);
     res.json({
       tools: [
-        ...(await tools.catalogue(coreApi.pool)).map(t => ({ ...tools.card(t), available: true, installed: Boolean(state[t.key]), ...(state[t.key] || {}) })),
+        ...(await tools.catalogue(coreApi.pool)).map(t => ({
+          ...tools.card(t), available: true, installed: Boolean(state[t.key]), ...(state[t.key] || {}),
+          audience: tools.levelOf(t, state[t.key]) // always 'standard' or 'advanced'; a direct tool is always advanced
+        })),
         ...tools.UNAVAILABLE.map(t => ({ ...tools.card(t), available: false, installed: false }))
       ],
       capableModels: cfg.models.filter(m => m.capabilities.includes('tools')).map(m => m.label),

@@ -26,8 +26,9 @@ const TOOLS = [
   { name: 'Server status', status: 'planned', note: 'Developers and administrators only.' },
   { name: 'ChimeraX figures', status: 'planned', note: '' },
   { name: 'Agentic Coot', status: 'planned', note: 'Coot already has many skills of its own.' },
-  { name: 'Read the MFF MariaDB: read-only, developers only', status: 'done', note: 'Tool db_query_mariadb (one SELECT/SHOW/DESCRIBE/EXPLAIN, read-only transaction, 10 s, 200 rows, every query logged); tested on a test database 27/11/2026; waits for the read-only account from the user.' },
-  { name: 'Read the MSSQL server on nusbf: read-only, developers only', status: 'planned', note: 'Waits for a read-only account and the list of databases from the user.' },
+  { name: 'Read the MFF MariaDB: read-only, advanced level only (direct tool)', status: 'done', note: 'Tool db_query_mariadb (one SELECT/SHOW/DESCRIBE/EXPLAIN, read-only transaction, 10 s, 200 rows, every query logged); tested on a test database; the read-only account is created at deploy.' },
+  { name: 'Read the MSSQL server: read-only, advanced level only (direct tool)', status: 'done', note: 'Tool db_query_mssql (one SELECT, rolled back, 10 s, 200 rows, every query logged), through pymssql; not yet run against the server: its read-only account is created at deploy.' },
+  { name: 'Two AI levels: Standard (service tools only) and Advanced (every tool)', status: 'tested', note: 'Core\'s roles decide (administrator, developer = Advanced); direct tools are Advanced only, in code; tested 27/11/2026.' },
   { name: 'Web search and reading web pages', status: 'tested', note: 'Tools below (Web); tested 27/11/2026; through the facility\'s own SearXNG; public pages only; the guard reads search words and pages; the AI cites its URLs. Approved by the user 27/11/2026.' }
 ];
 

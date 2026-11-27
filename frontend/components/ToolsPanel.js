@@ -9,7 +9,9 @@ const text = err => err.response?.data?.error || 'That did not work. Try again.'
 const SHOW = [['all', 'All'], ['installed', 'Installed'], ['catalogue', 'Not installed']];
 const validFilter = v => Boolean(v) && typeof v.search === 'string' && SHOW.some(s => s[0] === v.show) && (v.source === undefined || typeof v.source === 'string');
 const validServerDraft = v => v === null || (Boolean(v) && typeof v.key === 'string' && typeof v.name === 'string' && typeof v.url === 'string');
-const AUDIENCE = [['user', 'everyone'], ['staff', 'facility staff and developers'], ['developer', 'developers and administrators only']];
+// The two AI levels (core's roles decide): earlier stored values are read as one of them.
+const LEVELS = [['standard', 'Standard: everyone'], ['advanced', 'Advanced: developers and administrators']];
+const levelOf = a => (['staff', 'developer', 'developer-admin', 'advanced'].includes(a) ? 'advanced' : 'standard');
 const RISK = { 'reads only': S.GREEN, 'makes new files': S.BLUE, 'reads your MFF data': 'warning', 'reaches the internet': S.RED };
 
 function ToolCard({ tool, data, act }) {
@@ -25,11 +27,16 @@ function ToolCard({ tool, data, act }) {
       <div style={S.small}>Example: "{tool.example}"</div>
       <div style={S.small}>What it can see: {tool.sees}</div>
       {tool.needs && <div style={S.small}>What it needs: {tool.needs}</div>}
+      <div style={{ ...S.small, marginTop: '6px' }} data-testid={`kind-${tool.key}`}>
+        {tool.kind === 'direct'
+          ? <><span style={S.chip(S.RED)}>Direct</span> direct access to a database or server: advanced level only, always.</>
+          : <><span style={S.chip(S.GREEN)}>Service</span> {tool.forModel ? 'gives the AI only the asker\'s own, filtered data or public data.' : 'a feature of the chat, not given to the AI.'}</>}
+      </div>
       {tool.installed && (
         <div style={{ ...S.small, marginTop: '6px' }}>
-          For:{' '}
-          <select style={S.field} aria-label={`Audience of ${tool.name}`} disabled={!data.canEdit} value={tool.audience || 'user'} onChange={e => act(tool, { action: 'audience', audience: e.target.value })}>
-            {AUDIENCE.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          Level:{' '}
+          <select style={S.field} aria-label={`Level of ${tool.name}`} disabled={!data.canEdit || tool.kind === 'direct'} value={tool.kind === 'direct' ? 'advanced' : levelOf(tool.audience)} onChange={e => act(tool, { action: 'audience', audience: e.target.value })}>
+            {LEVELS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </select>
         </div>
       )}
@@ -201,13 +208,13 @@ function ToolsPanel({ coreApi }) {
           rows={data.docs}
           rememberAs="ai.setup.tools.docs"
           wrapperStyle={{ maxHeight: '320px' }}
-          columns={{ name: d => d.name, area: d => d.area, audience: d => ({ user: 'everyone', staff: 'facility staff', developer: 'developers' }[d.audience]), summary: d => d.summary }}
-          head={[{ key: 'name', label: 'Doc' }, { key: 'area', label: 'Area' }, { key: 'audience', label: 'For' }, { key: 'summary', label: 'What it covers' }]}
+          columns={{ name: d => d.name, area: d => d.area, audience: d => levelOf(d.audience), summary: d => d.summary }}
+          head={[{ key: 'name', label: 'Doc' }, { key: 'area', label: 'Area' }, { key: 'audience', label: 'Level' }, { key: 'summary', label: 'What it covers' }]}
           rowKey={d => d.name}
           renderRow={d => (
                 <tr>
                   <td style={{ ...S.td, fontFamily: 'monospace', fontSize: '12px' }}>{d.name}</td><td style={S.td}>{d.area}</td>
-                  <td style={S.td}>{{ user: 'everyone', staff: 'facility staff', developer: 'developers' }[d.audience]}{!d.indexed && <div style={S.small}>not in INDEX.json: default</div>}</td><td style={{ ...S.td, color: '#666' }}>{d.summary}</td>
+                  <td style={S.td}>{levelOf(d.audience) === 'advanced' ? 'advanced' : 'standard (everyone)'}{!d.indexed && <div style={S.small}>not in INDEX.json: default</div>}</td><td style={{ ...S.td, color: '#666' }}>{d.summary}</td>
                 </tr>
           )}
         />

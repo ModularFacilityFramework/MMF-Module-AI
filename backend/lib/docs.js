@@ -10,8 +10,9 @@
 // Who may read which doc (the user's rule, 26/11/2026): user guides are for
 // everyone; install, admin, security, server and deployment docs, and any doc
 // not known to be for users, are for facility staff and developers. INDEX.json
-// in MODULE_AI_DOCS_DIR, when present, can set a doc's audience ("user",
-// "staff", "developer"; "developer-admin" = "developer"). The check is made
+// in MODULE_AI_DOCS_DIR, when present, can set a doc's level ("standard" or
+// "advanced"; older "user", "staff", "developer", "developer-admin" are read as
+// standard, advanced, advanced, advanced). The check is made
 // here, for the asker, before any text reaches the model: a doc above the
 // asker's level is never listed, searched or read.
 const fsp = require('fs').promises;
@@ -52,7 +53,7 @@ async function source(coreApi, cfg) {
 }
 
 // INDEX.json, as { files: { name: entry } } or { files: [ { file, ...entry } ] }
-// (the form mff-docs proposed). audience 'developer-admin' means 'developer'.
+// (the form mff-docs proposed); audience values as described above.
 // -> { found, entries: { name: { audience, summary } } }
 async function readIndexFile(cfg) {
   if (!cfg.docsDir) return { found: false, entries: {} };
@@ -62,8 +63,7 @@ async function readIndexFile(cfg) {
   const entries = {};
   const add = (name, e) => {
     if (!name || !e || typeof e !== 'object') return;
-    const audience = e.audience === 'developer-admin' ? 'developer' : e.audience;
-    entries[String(name)] = { audience: safety.LEVELS.includes(audience) ? audience : null, summary: typeof e.summary === 'string' ? e.summary : '' };
+    entries[String(name)] = { audience: e.audience ? safety.norm(e.audience) : null, summary: typeof e.summary === 'string' ? e.summary : '' };
   };
   if (Array.isArray(list)) list.forEach(e => add(e && (e.file || e.name), e));
   else if (list && typeof list === 'object') Object.entries(list).forEach(([name, e]) => add(name, e));
@@ -111,7 +111,7 @@ async function load(coreApi, cfg) {
     const m = meta[name] || {};
     // No entry, or no audience in it: user guides are for everyone, the rest
     // for facility staff and developers.
-    const fallback = /_user-guide\.md$/.test(name) ? 'user' : 'staff';
+    const fallback = /_user-guide\.md$/.test(name) ? 'standard' : 'advanced';
     const title = ((/^#\s+(.+)$/m.exec(text) || [])[1] || name.replace(/\.md$/, '')).trim();
     docs.push({
       name, title, area: areaOf(name), text,
@@ -133,7 +133,7 @@ function forget() { cache = { at: 0, key: '', docs: null }; }
 async function visible(ctx) {
   const all = await load(ctx.coreApi, ctx.cfg);
   if (!all) throw new Error('the MFF docs are not available on this server');
-  return all.filter(d => safety.allowed(d.audience, ctx.level || 'user'));
+  return all.filter(d => safety.allowed(d.audience, ctx.level || 'standard'));
 }
 
 function findDoc(docs, wanted) {
@@ -151,7 +151,7 @@ const TOOLS = [
     name: 'MFF docs: index',
     what: 'Lets the AI see the list of MFF docs and what each one covers, so it knows where things are documented.',
     example: 'Where is the Slurm set-up documented?',
-    sees: 'The MFF docs the person asking may read (by audience: everyone, facility staff or developers).',
+    sees: 'The MFF docs the person asking may read (user guides for everyone, the rest for the advanced level).',
     risk: 'reads only',
     status: 'tested',
     definition: {
