@@ -13,6 +13,7 @@ const slurmTools = require('./slurmTools');
 const webTools = require('./webTools');
 const mcp = require('./mcp');
 const sandboxTools = require('./sandboxTools');
+const dbTools = require('./dbTools');
 
 const MAX_RESULT_CHARS = 9000;
 
@@ -191,6 +192,7 @@ const CATALOGUE = [
   ...slurmTools.TOOLS,
   ...webTools.TOOLS,
   ...sandboxTools.TOOLS,
+  ...dbTools.TOOLS,
   // not a tool of the model: the switch for the chat's microphone (speech.js)
   {
     key: 'speech_to_text', name: 'Speech to text (microphone)', status: 'tested', risk: 'reads only',
@@ -258,7 +260,8 @@ async function change(coreApi, key, body, userId) {
   const { action } = body || {};
   if (action === 'install') {
     if (state[key]) throw new storage.HttpError(409, 'installed', 'This tool is already installed.');
-    state[key] = { enabled: true, roles: [], audience: 'user' };
+    const tool = (await catalogue(coreApi.pool)).find(t => t.key === key);
+    state[key] = { enabled: true, roles: [], audience: (tool && tool.minAudience) || 'user' };
   } else {
     if (!state[key]) throw new storage.HttpError(409, 'not_installed', 'This tool is not installed.');
     if (action === 'remove') delete state[key];
@@ -268,6 +271,10 @@ async function change(coreApi, key, body, userId) {
       state[key] = { ...state[key], roles: [...new Set(Array.isArray(body.roles) ? body.roles : [])].filter(r => roles.includes(r)) };
     } else if (action === 'audience') {
       if (!safety.LEVELS.includes(body.audience)) throw new storage.HttpError(400, 'bad_audience', 'Choose who the tool is for.');
+      const tool = (await catalogue(coreApi.pool)).find(t => t.key === key);
+      if (tool && tool.minAudience && safety.LEVELS.indexOf(body.audience) < safety.LEVELS.indexOf(tool.minAudience)) {
+        throw new storage.HttpError(400, 'audience_too_wide', 'This tool is for developers and administrators only (the user\'s rule).');
+      }
       state[key] = { ...state[key], audience: body.audience };
     } else throw new storage.HttpError(400, 'bad_action', 'Unknown action.');
   }
@@ -283,7 +290,9 @@ async function forUser(coreApi, user, level = 'user') {
   const roles = await coreApi.getUserRoles(user);
   return (await catalogue(coreApi.pool)).filter((t) => {
     const s = state[t.key];
-    return t.definition && s && s.enabled && (!s.roles.length || s.roles.some(r => roles.includes(r))) && safety.allowed(s.audience || 'user', level);
+    // a tool's minimum audience (databases: developers) always wins over its setting
+    const audience = t.minAudience && safety.LEVELS.indexOf(t.minAudience) > safety.LEVELS.indexOf(s ? s.audience || 'user' : 'user') ? t.minAudience : (s && s.audience) || 'user';
+    return t.definition && s && s.enabled && (!s.roles.length || s.roles.some(r => roles.includes(r))) && safety.allowed(audience, level);
   });
 }
 

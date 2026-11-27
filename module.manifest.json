@@ -1,7 +1,7 @@
 {
   "id": "ai",
   "label": "AI",
-  "version": "0.1.28",
+  "version": "0.1.29",
   "tablePrefix": "ai_",
   "mountPath": "/ai",
   "backendEntry": "backend/index.js",
@@ -82,6 +82,22 @@
     {
       "key": "WHISPER_URL",
       "description": "Optional. Base URL of the Whisper speech-to-text service on the AI GPU host (tools/gpu6/whisper_server.py), e.g. http://192.168.1.16:8003."
+    },
+    {
+      "key": "MARIADB_RO_HOST",
+      "description": "Optional. Host of the MariaDB server for the read-only database tool (developers only), default 127.0.0.1."
+    },
+    {
+      "key": "MARIADB_RO_PORT",
+      "description": "Optional. Its port, default 3306."
+    },
+    {
+      "key": "MARIADB_RO_USER",
+      "description": "Optional. The dedicated read-only account created by the user for the AI (SELECT only)."
+    },
+    {
+      "key": "MARIADB_RO_PASSWORD",
+      "description": "Optional. That account's password."
     }
   ]
 }

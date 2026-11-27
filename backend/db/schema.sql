@@ -221,3 +221,18 @@ CREATE TABLE IF NOT EXISTS ai_transcribe_log (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   KEY idx_ai_transcribe_log_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Read-only database tools (developers only): every query, with who ran it.
+CREATE TABLE IF NOT EXISTS ai_db_query_log (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  answer_id CHAR(36) NULL,
+  user_id BIGINT NULL,
+  db VARCHAR(16) NOT NULL,
+  query MEDIUMTEXT NOT NULL,
+  rows_returned INT NOT NULL DEFAULT 0,
+  ms INT NOT NULL DEFAULT 0,
+  ok TINYINT NOT NULL DEFAULT 1,
+  error VARCHAR(300) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_ai_db_query_log_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
