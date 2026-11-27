@@ -34,6 +34,18 @@ function CopyButton({ text }) {
   return <button type="button" className={css.linkButton} onClick={onClick}>{copied ? 'Copied' : 'Copy'}</button>;
 }
 
+// An image the AI made (a chart): shown in the answer, loaded with the
+// person's own login like a download.
+function AnswerImage({ file, loadImage }) {
+  const [src, setSrc] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    loadImage(file).then(u => alive && setSrc(u)).catch(() => {});
+    return () => { alive = false; };
+  }, [file, loadImage]);
+  return src ? <img src={src} alt={file.name} data-testid="answer-image" style={{ maxWidth: '100%', maxHeight: '480px', display: 'block', margin: '8px 0', border: '1px solid #eee' }} /> : null;
+}
+
 function FileChip({ file, title, onDownload }) {
   return (
     <button type="button" className={css.chip} title={title} onClick={() => onDownload(file)}>
@@ -120,7 +132,7 @@ const ENDINGS = {
   length: 'The answer reached the length limit and was cut off. Ask "continue" for more.'
 };
 
-export function Answer({ message, live, thinkingOpen, onToggleThinking, toolsOpen, onToggleTools, onDownload, canRegenerate, onRegenerate }) {
+export function Answer({ message, live, thinkingOpen, onToggleThinking, toolsOpen, onToggleTools, onDownload, loadImage, canRegenerate, onRegenerate }) {
   const ending = message.error || ENDINGS[message.status];
   return (
     <div className={css.answer} data-testid="answer">
@@ -133,6 +145,7 @@ export function Answer({ message, live, thinkingOpen, onToggleThinking, toolsOpe
       )}
       {live && !message.content && !message.reasoning && <div className={css.muted}>{message.waiting || 'Reading your question…'} <Elapsed since={message.since} /></div>}
       {live && message.content && <span className={css.cursor} />}
+      {loadImage && (message.files || []).filter(f => f.kind === 'image').map(f => <AnswerImage key={`img-${f.id}`} file={f} loadImage={loadImage} />)}
       {message.files && message.files.length > 0 && (
         <div className={css.chips}>
           {message.files.map(f => <FileChip key={f.id} file={f} title="Download this file" onDownload={onDownload} />)}

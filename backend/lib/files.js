@@ -23,7 +23,7 @@ const MIME = {
   '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
 };
 
-const REFUSED = 'This type of file cannot be read. Supported: PDF, Word (.docx), Excel (.xlsx), PowerPoint (.pptx), PNG, JPEG and WebP images, and text files (code, CSV, JSON, ...).';
+const REFUSED = 'This type of file cannot be read. Supported: PDF, Word (.docx), Excel (.xlsx), PowerPoint (.pptx), PNG, JPEG and WebP images, MTZ reflection files, and text files (code, CSV, JSON, mmCIF, PDB, ...).';
 
 function imageExt(b) {
   if (b.length > 8 && b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 13, 10, 26, 10]))) return '.png';
@@ -108,6 +108,9 @@ async function ingest({ root, chatId, tmpPath, name, limits }) {
     kind = 'image';
     ext = img;
     if (buf.length > limits.maxImageMB * MB) throw new HttpError(413, 'too_large', `Images can be at most ${limits.maxImageMB} MB.`);
+  } else if (buf.toString('latin1', 0, 4) === 'MTZ ') {
+    kind = 'mtz';
+    ext = '.mtz';
   } else if (buf.toString('latin1', 0, 1024).includes('%PDF-')) {
     kind = 'pdf';
     ext = '.pdf';
@@ -137,7 +140,14 @@ async function ingest({ root, chatId, tmpPath, name, limits }) {
       Object.assign(meta, await reduceImage(original, reduced));
     } else {
       let truncated = false;
-      if (text === null) {
+      if (kind === 'mtz') {
+        // A binary reflection file: the model gets gemmi's summary (sandbox).
+        try {
+          text = await require('./sandboxTools').mtzSummary(original, fileName);
+        } catch (err) {
+          text = `MTZ reflection file ${fileName} (${buf.length} bytes). No summary: ${err.message}.`;
+        }
+      } else if (text === null) {
         const r = await extract(original, kind);
         text = r.text;
         truncated = r.truncated;

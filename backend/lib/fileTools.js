@@ -75,6 +75,13 @@ async function edit(kind, args, ctx) {
   return `Saved as a new file "${ref.name}" (the original is unchanged; the person sees a download button). ${r.summary}`;
 }
 
+// A file made by a tool (for example a chart from the sandbox), under a free name.
+async function storeData(ctx, name, data) {
+  const clean = files.safeName(name);
+  const taken = fileRefs(ctx);
+  return store(ctx, taken.has(clean) ? nextName(clean, taken) : clean, data);
+}
+
 async function make(args, ctx) {
   const name = files.safeName(args.name);
   const ext = path.extname(name).toLowerCase();
@@ -92,4 +99,4 @@ async function make(args, ctx) {
   return `Created "${ref.name}" (the person sees a download button).`;
 }
 
-module.exports = { edit, make, nextName };
+module.exports = { edit, make, nextName, storeData };

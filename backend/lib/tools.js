@@ -12,6 +12,7 @@ const docs = require('./docs');
 const slurmTools = require('./slurmTools');
 const webTools = require('./webTools');
 const mcp = require('./mcp');
+const sandboxTools = require('./sandboxTools');
 
 const MAX_RESULT_CHARS = 9000;
 
@@ -188,7 +189,8 @@ const CATALOGUE = [
   },
   ...docs.TOOLS,
   ...slurmTools.TOOLS,
-  ...webTools.TOOLS
+  ...webTools.TOOLS,
+  ...sandboxTools.TOOLS
 ];
 
 // Shown in the catalogue, but not available.

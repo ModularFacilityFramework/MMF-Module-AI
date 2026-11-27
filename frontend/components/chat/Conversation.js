@@ -161,6 +161,16 @@ function Conversation({ coreApi, chatId, limits, status, think, setThink, reason
     } catch (err) { setError('The file could not be downloaded.'); }
   };
 
+  // Images the AI made, shown in its answers; loaded once per file.
+  const images = useRef(new Map());
+  const loadImage = useCallback(async (f) => {
+    if (!images.current.has(f.id)) {
+      images.current.set(f.id, api.get(`/ai/chats/${chatId}/files/${f.id}`, { responseType: 'blob' }).then(r => URL.createObjectURL(r.data)));
+    }
+    return images.current.get(f.id);
+  }, [api, chatId]);
+  useEffect(() => () => { images.current.forEach(p => p.then(u => URL.revokeObjectURL(u)).catch(() => {})); }, []);
+
   const toggleThinking = id => setReasoningOpen(list => (list.includes(id) ? list.filter(x => x !== id) : [...list, id].slice(-50)));
 
   const answering = Boolean(live);
@@ -196,6 +206,7 @@ function Conversation({ coreApi, chatId, limits, status, think, setThink, reason
             message={m}
             thinkingOpen={reasoningOpen.includes(m.id)}
             onDownload={download}
+            loadImage={loadImage}
             toolsOpen={reasoningOpen.includes(`tools:${m.id}`)}
             onToggleTools={() => toggleThinking(`tools:${m.id}`)}
             onToggleThinking={() => toggleThinking(m.id)}
