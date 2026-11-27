@@ -11,7 +11,52 @@ const validDraft = d => Boolean(d) && typeof d.text === 'string' && Array.isArra
 // Page state holds at most 64 KB per key: a longer draft stays in this tab only.
 const DRAFT_MAX = 50000;
 
-function Composer({ coreApi, chatId, limits, model, think, setThink, answering, ready, onSend, onStop, ensureChat, handOver, takeHandOver, onError }) {
+// The microphone (speech to text): records in the browser, the text comes back
+// from Whisper on the AI server and is added to the question to check and send.
+const MAX_RECORDING_S = 300;
+
+function Microphone({ api, disabled, onText, onError }) {
+  const [state, setState] = useState('idle'); // idle | recording | working
+  const [seconds, setSeconds] = useState(0);
+  const rec = useRef(null);
+  const timer = useRef(null);
+  useEffect(() => () => { clearInterval(timer.current); if (rec.current && rec.current.state !== 'inactive') rec.current.stop(); }, []);
+  const start = async () => {
+    if (!navigator.mediaDevices || !window.MediaRecorder) { onError('This browser cannot record sound here (it needs a secure https page).'); return; }
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (err) { onError('The microphone could not be used (no permission, or no microphone).'); return; }
+    const chunks = [];
+    const r = new MediaRecorder(stream);
+    rec.current = r;
+    r.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    r.onstop = async () => {
+      clearInterval(timer.current);
+      stream.getTracks().forEach(t => t.stop());
+      setState('working');
+      try {
+        const blob = new Blob(chunks, { type: r.mimeType || 'audio/webm' });
+        const res = await api.post('/ai/transcribe', blob, { headers: { 'Content-Type': 'application/octet-stream' }, timeout: 0 });
+        if (res.data.text) onText(res.data.text); else onError('Nothing was understood in the recording.');
+      } catch (err) {
+        onError(err.response?.data?.error || 'The recording could not be turned into text.');
+      }
+      setState('idle');
+    };
+    r.start();
+    setSeconds(0);
+    setState('recording');
+    timer.current = setInterval(() => setSeconds((s) => { if (s + 1 >= MAX_RECORDING_S && r.state === 'recording') r.stop(); return s + 1; }), 1000);
+  };
+  const stop = () => { if (rec.current && rec.current.state === 'recording') rec.current.stop(); };
+  if (state === 'recording') return <button type="button" className={css.stop} data-testid="mic" aria-label="Stop recording" onClick={stop}>■ Stop ({seconds} s)</button>;
+  return (
+    <button type="button" className={css.secondary} data-testid="mic" aria-label="Speak your question" title="Speak your question: the text is written into the box for you to check" disabled={disabled || state === 'working'} onClick={start}>
+      {state === 'working' ? 'Writing…' : '🎤 Speak'}
+    </button>
+  );
+}
+
+function Composer({ coreApi, chatId, limits, speech, model, think, setThink, answering, ready, onSend, onStop, ensureChat, handOver, takeHandOver, onError }) {
   const { api } = coreApi;
   const [saved, setSaved, resetSaved] = coreApi.usePageState(draftKey(chatId), EMPTY, validDraft);
   const [draft, setDraftState] = useState(saved);
@@ -180,6 +225,14 @@ function Composer({ coreApi, chatId, limits, model, think, setThink, answering, 
       <div className={css.composerBar}>
         <input ref={fileInput} type="file" multiple hidden data-testid="file-input" onChange={(e) => { upload(e.target.files); e.target.value = ''; }} />
         <button type="button" className={css.secondary} disabled={answering} onClick={() => fileInput.current.click()}>Attach files</button>
+        {speech && (
+          <Microphone
+            api={api}
+            disabled={answering}
+            onError={onError}
+            onText={(t) => { const cur = latest.current.text; setDraft({ text: cur ? `${cur.replace(/\s+$/, '')} ${t}` : t }); if (textArea.current) textArea.current.focus(); }}
+          />
+        )}
         {caps.includes('thinking') && (
           <label className={css.thinkToggle} title="Slower, better for hard questions. The thinking is shown separately from the answer.">
             <input type="checkbox" checked={think} onChange={e => setThink(e.target.checked)} /> Think first

@@ -210,3 +210,14 @@ CREATE TABLE IF NOT EXISTS ai_tool_use (
   KEY idx_ai_tool_use_answer (answer_id),
   KEY idx_ai_tool_use_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Speech to text (the chat's microphone): one row per recording, no text.
+CREATE TABLE IF NOT EXISTS ai_transcribe_log (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT NULL,
+  seconds_audio DOUBLE NULL,
+  ms INT NOT NULL DEFAULT 0,
+  ok TINYINT NOT NULL DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_ai_transcribe_log_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

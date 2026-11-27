@@ -9,7 +9,7 @@ import css from './chat.module.css';
 const errorText = err => err.response?.data?.error || 'The AI module could not be reached. Try again.';
 const PAINT_MS = 80; // repaint a streaming answer at most this often
 
-function Conversation({ coreApi, chatId, limits, status, think, setThink, reasoningOpen, setReasoningOpen, onMissing, onChanged, onCreated, handOver, takeHandOver }) {
+function Conversation({ coreApi, chatId, limits, speech, status, think, setThink, reasoningOpen, setReasoningOpen, onMissing, onChanged, onCreated, handOver, takeHandOver }) {
   const { api } = coreApi;
   const [messages, setMessages] = useState(chatId ? null : []);
   const [live, setLive] = useState(null); // the answer being written
@@ -241,6 +241,7 @@ function Conversation({ coreApi, chatId, limits, status, think, setThink, reason
         coreApi={coreApi}
         chatId={chatId}
         limits={limits}
+        speech={speech}
         model={status ? status.model : null}
         think={think}
         setThink={setThink}

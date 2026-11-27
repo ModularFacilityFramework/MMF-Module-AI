@@ -190,7 +190,13 @@ const CATALOGUE = [
   ...docs.TOOLS,
   ...slurmTools.TOOLS,
   ...webTools.TOOLS,
-  ...sandboxTools.TOOLS
+  ...sandboxTools.TOOLS,
+  // not a tool of the model: the switch for the chat's microphone (speech.js)
+  {
+    key: 'speech_to_text', name: 'Speech to text (microphone)', status: 'tested', risk: 'reads only',
+    what: 'Shows a microphone button in the chat: what the person says is written into the question box (Whisper, on the facility\'s AI server), to check and send.',
+    example: 'Say your question instead of typing it.', sees: 'The recording, on the facility\'s own AI server; it is not kept.'
+  }
 ];
 
 // Shown in the catalogue, but not available.
@@ -277,7 +283,7 @@ async function forUser(coreApi, user, level = 'user') {
   const roles = await coreApi.getUserRoles(user);
   return (await catalogue(coreApi.pool)).filter((t) => {
     const s = state[t.key];
-    return s && s.enabled && (!s.roles.length || s.roles.some(r => roles.includes(r))) && safety.allowed(s.audience || 'user', level);
+    return t.definition && s && s.enabled && (!s.roles.length || s.roles.some(r => roles.includes(r))) && safety.allowed(s.audience || 'user', level);
   });
 }
 

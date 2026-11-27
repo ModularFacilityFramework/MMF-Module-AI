@@ -5,6 +5,7 @@ const path = require('path');
 const fsp = require('fs').promises;
 const { randomUUID } = require('crypto');
 const express = require('express');
+const speech = require('../lib/speech');
 const multer = require('multer');
 const { readConfig } = require('../lib/config');
 const { getLimits, MB } = require('../lib/limits');
@@ -39,6 +40,11 @@ module.exports = function buildChatRouter(coreApi) {
     } catch (err) { fail(res, err); }
   };
   const user = [coreApi.authenticateToken, withRoot];
+
+  // POST <api>/ai/transcribe - a recording from the microphone button -> text.
+  router.post('/transcribe', coreApi.authenticateToken, express.raw({ type: () => true, limit: '25mb' }), wrap(async (req, res) => {
+    res.json(await speech.transcribe(coreApi, req.user, req.body, { language: req.query.language }));
+  }));
 
   const generationInfo = g => g && {
     id: g.id, chatId: g.chatId, state: g.state, position: g.position, assistantId: g.meta.assistantId,

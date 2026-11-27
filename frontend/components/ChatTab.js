@@ -201,6 +201,7 @@ function ChatTab({ coreApi }) {
           coreApi={coreApi}
           chatId={selected}
           limits={config.limits}
+          speech={Boolean(config.speech)}
           status={status}
           think={think}
           setThink={setThink}

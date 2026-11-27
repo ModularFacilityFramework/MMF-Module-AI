@@ -5,6 +5,7 @@ const express = require('express');
 const { readConfig } = require('../lib/config');
 const { overview } = require('../lib/status');
 const { getLimits } = require('../lib/limits');
+const speech = require('../lib/speech');
 
 module.exports = function buildPublicRouter(coreApi) {
   const router = express.Router();
@@ -15,6 +16,7 @@ module.exports = function buildPublicRouter(coreApi) {
     const limits = await getLimits(coreApi.pool);
     res.json({
       configured: cfg.missing.length === 0 && cfg.modelErrors.length === 0,
+      speech: await speech.allowed(coreApi, req.user).catch(() => false),
       models: cfg.models,
       limits: {
         maxPromptKB: limits.maxPromptKB,
