@@ -10,6 +10,29 @@
 // the slurm module counts as staff; every job and per-node detail only at the
 // Advanced level. It calls only these GET routes.
 const MAX_JOBS = 60;
+// The slurm module's staff roles (its own rule) and the first slurm version that
+// honours scope=own on job-state and cluster-state (mff-slurm, ed44c73).
+const SLURM_STAFF_ROLES = ['facility_manager', 'facility_staff'];
+const SCOPE_OWN_FROM = [0, 1, 49];
+const MFF_JOBS = 'Jobs sent to Slurm through an MFF module run under MFF\'s own account, so they are not listed as yours here; see them in that module.';
+
+const newer = (v, min) => {
+  const p = String(v || '').split('.').map(n => parseInt(n, 10) || 0);
+  for (let i = 0; i < min.length; i++) { if ((p[i] || 0) !== min[i]) return (p[i] || 0) > min[i]; }
+  return true;
+};
+
+// At the standard level, can job-state be trusted to answer with the person's
+// own jobs only? Yes for anyone the slurm module does not count as staff; for
+// its staff only when the installed slurm honours scope=own (0.1.49 or newer).
+async function ownJobStateSafe(ctx) {
+  const roles = ctx.user ? await ctx.coreApi.getUserRoles(ctx.user).catch(() => []) : [];
+  if (!roles.some(r => SLURM_STAFF_ROLES.includes(r))) return true;
+  if (typeof ctx.coreApi.getModulesForUser !== 'function') return false;
+  const mods = await ctx.coreApi.getModulesForUser(ctx.user).catch(() => []);
+  const slurm = (mods || []).find(m => m.id === 'slurm');
+  return Boolean(slurm && newer(slurm.version, SCOPE_OWN_FROM));
+}
 
 // By status only: the body of an error answer may not reach us.
 function why(r, what) {
@@ -19,7 +42,7 @@ function why(r, what) {
       ? 'only facility staff and developers may see every job'
       : 'you have no Slurm access on the cluster (no Slurm account, or it is not set up for you); facility staff can help';
   }
-  if (r.status === 404) return `there is no job ${what} that you can see`;
+  if (r.status === 404) return `there is no job ${what} that you can see. ${MFF_JOBS}`;
   if (r.status === 400) return 'the Slurm module did not accept this request (bad job id or option)';
   if (r.status === 502) return 'Slurm is unavailable right now';
   return `the Slurm module answered ${r.status}`;
@@ -61,7 +84,7 @@ const TOOLS = [
       const { totals, jobs: _drop, ...rest } = data || {};
       const out = { ...rest, [all ? 'jobsOfAllUsers' : 'yourJobs']: shown, [all ? 'jobsListed' : 'yourJobCount']: jobs.length, clusterTotalsAllUsers: totals };
       return `${compact(out)}${jobs.length > shown.length ? `\n(${jobs.length - shown.length} more jobs not shown)` : ''}\n`
-        + `clusterTotalsAllUsers counts every user's jobs on the cluster, not only ${all ? 'those listed' : 'yours'}.\n${NOTE}`;
+        + `clusterTotalsAllUsers counts every user's jobs on the cluster, not only ${all ? 'those listed' : 'yours'}.${all ? '' : ` ${MFF_JOBS}`}\n${NOTE}`;
     }
   },
   {
@@ -81,6 +104,9 @@ const TOOLS = [
       const id = String(args.job_id || '').trim();
       if (!/^[1-9]\d{0,9}(_\d{1,9})?$/.test(id)) throw new Error('a job id is a number, for example 123456 or 123456_7');
       // at the standard level only the person's own jobs, even for the slurm module's staff
+      if (ctx.level !== 'advanced' && !(await ownJobStateSafe(ctx))) {
+        throw new Error('looking up a single job is not available at the standard level for your roles until the Slurm module is updated (0.1.49 or newer); your own queue (slurm_queue) still works');
+      }
       return `${compact(await get(ctx, `/external/job-state/${id}`, ctx.level === 'advanced' ? null : { scope: 'own' }, id))}\nexitCode is empty until the job has finished; state may be several values joined with "+".`;
     }
   },

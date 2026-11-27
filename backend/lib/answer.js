@@ -261,7 +261,7 @@ function startAnswer(coreApi, { user, root, chatId, think, limits }) {
             ? { ok: false, text: 'Error: too many tool calls for one answer.' }
             : await tools.call(available, c.name, c.arguments, {
               root, chatId, history, limits, created: g.files, pool: coreApi.pool, userId: user.id, answerId: assistantId, keyword,
-              coreApi, cfg: o.cfg, level, guardOn: pol.guard, guardDown: sset.guardDown
+              coreApi, cfg: o.cfg, level, guardOn: pol.guard, guardDown: sset.guardDown, user
             });
           // Every tool use, per answer: the tool and what it was used on (a doc
           // or skill name), never the question, the arguments or the result.
