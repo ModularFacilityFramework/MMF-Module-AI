@@ -80,7 +80,8 @@ const TOOLS = [
     run: async (args, ctx) => {
       const id = String(args.job_id || '').trim();
       if (!/^[1-9]\d{0,9}(_\d{1,9})?$/.test(id)) throw new Error('a job id is a number, for example 123456 or 123456_7');
-      return `${compact(await get(ctx, `/external/job-state/${id}`, null, id))}\nexitCode is empty until the job has finished; state may be several values joined with "+".`;
+      // at the standard level only the person's own jobs, even for the slurm module's staff
+      return `${compact(await get(ctx, `/external/job-state/${id}`, ctx.level === 'advanced' ? null : { scope: 'own' }, id))}\nexitCode is empty until the job has finished; state may be several values joined with "+".`;
     }
   },
   {
@@ -97,7 +98,7 @@ const TOOLS = [
       parameters: { type: 'object', properties: {} }
     },
     run: async (args, ctx) => {
-      const data = await get(ctx, '/external/cluster-state', null, 'cluster');
+      const data = await get(ctx, '/external/cluster-state', ctx.level === 'advanced' ? null : { scope: 'own' }, 'cluster');
       // per-node detail (host names, state reasons) only at the advanced level
       const shown = ctx.level === 'advanced' ? data : { ...data, nodes: undefined };
       return `${compact(shown)}\n${NOTE}`;
