@@ -4,6 +4,7 @@
 // display data. Later steps add the Model, Benchmark, Tools, Limits and
 // Usage sub-tabs.
 import React, { useCallback, useState } from 'react';
+import SortedTable from './SortedTable';
 import * as S from './styles';
 
 const CAPABILITY_TEXT = {
@@ -56,14 +57,19 @@ function ConfigPanel({ coreApi, initialStatus }) {
         <div style={S.warningBanner}>Problems in MODULE_AI_MODELS: {config.modelErrors.join('; ')}</div>
       )}
 
-      <div style={S.tableWrapper}>
-        <table style={S.table}>
-          <thead style={S.thead}>
-            <tr><th style={S.th}>Setting</th><th style={S.th}>Needed</th><th style={S.th}>State</th></tr>
-          </thead>
-          <tbody>
-            {config.keys.map(k => (
-              <tr key={k.key}>
+      <SortedTable
+        coreApi={coreApi}
+        rows={config.keys}
+        rememberAs="ai.setup.config.settings"
+        columns={{
+          key: k => k.key,
+          needed: k => (k.required ? 'required' : 'optional'),
+          state: k => (k.set ? 'set' : k.required ? 'missing' : 'not set')
+        }}
+        head={[{ key: 'key', label: 'Setting' }, { key: 'needed', label: 'Needed' }, { key: 'state', label: 'State' }]}
+        rowKey={k => k.key}
+        renderRow={k => (
+              <tr>
                 <td style={S.td}><code>{k.key}</code></td>
                 <td style={S.td}>{k.required ? 'required' : 'optional'}</td>
                 <td style={S.td}>
@@ -72,23 +78,26 @@ function ConfigPanel({ coreApi, initialStatus }) {
                     : <span style={k.required ? S.chip(S.RED) : S.chip('warning')}>{k.required ? 'missing' : 'not set (default used)'}</span>}
                 </td>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+        )}
+      />
 
       <h3 style={{ fontSize: '16px', marginTop: '25px' }}>Models</h3>
       {config.models.length === 0 ? (
         <div style={S.empty}>No models configured.</div>
       ) : (
-        <div style={S.tableWrapper}>
-          <table style={S.table}>
-            <thead style={S.thead}>
-              <tr><th style={S.th}>Keyword</th><th style={S.th}>Name</th><th style={S.th}>What it can do</th></tr>
-            </thead>
-            <tbody>
-              {config.models.map(m => (
-                <tr key={m.keyword}>
+        <SortedTable
+          coreApi={coreApi}
+          rows={config.models}
+          rememberAs="ai.setup.config.models"
+          columns={{
+            keyword: m => m.keyword,
+            label: m => m.label,
+            capabilities: m => (m.capabilities.length ? m.capabilities.map(c => CAPABILITY_TEXT[c] || c).join('; ') : 'text only')
+          }}
+          head={[{ key: 'keyword', label: 'Keyword' }, { key: 'label', label: 'Name' }, { key: 'capabilities', label: 'What it can do' }]}
+          rowKey={m => m.keyword}
+          renderRow={m => (
+                <tr>
                   <td style={S.td}><code>{m.keyword}</code></td>
                   <td style={S.td}>{m.label}</td>
                   <td style={S.td}>
@@ -97,10 +106,8 @@ function ConfigPanel({ coreApi, initialStatus }) {
                       : 'text only'}
                   </td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+          )}
+        />
       )}
       <p style={{ ...S.paragraph, marginTop: '15px', fontSize: '13px' }}>
         Chats and uploads will be kept in each user's server storage, in the folder <code>{config.storageSubdir}</code>.

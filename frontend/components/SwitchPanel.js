@@ -1,6 +1,7 @@
 // Setup -> Model: change the loaded model, who may do that, and what happened.
 // Unsaved choices persist (ai.setup.switchTarget, ai.setup.switchers.draft).
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import SortedTable from './SortedTable';
 import * as S from './styles';
 
 const text = err => err.response?.data?.error || 'That did not work. Try again.';
@@ -72,7 +73,8 @@ function Switchers({ coreApi }) {
   );
 }
 
-function Log({ api, version }) {
+function Log({ coreApi, version }) {
+  const { api } = coreApi;
   const [rows, setRows] = useState(null);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -84,24 +86,30 @@ function Log({ api, version }) {
   if (!rows) return <div style={S.loading}>Loading...</div>;
   if (!rows.length) return <div style={S.empty}>No switches yet.</div>;
   return (
-    <div style={{ ...S.tableWrapper, maxHeight: '300px' }}>
-      <table style={S.table}>
-        <thead style={S.thead}>
-          <tr>{['When', 'From', 'To', 'By', 'Result'].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
-        </thead>
-        <tbody>
-          {rows.map(r => (
-            <tr key={r.id}>
+    <SortedTable
+      coreApi={coreApi}
+      rows={rows}
+      rememberAs="ai.setup.switch.log"
+      wrapperStyle={{ maxHeight: '300px' }}
+      columns={{
+        when: { value: r => r.startedAt, type: 'date' },
+        from: r => r.from,
+        to: r => r.to,
+        by: r => (r.source === 'outside' ? 'outside MFF' : r.by),
+        result: r => r.status
+      }}
+      head={[{ key: 'when', label: 'When' }, { key: 'from', label: 'From' }, { key: 'to', label: 'To' }, { key: 'by', label: 'By' }, { key: 'result', label: 'Result' }]}
+      rowKey={r => r.id}
+      renderRow={r => (
+            <tr>
               <td style={S.td}>{new Date(r.startedAt).toLocaleString()}</td>
               <td style={S.td}>{r.from || '-'}</td>
               <td style={S.td}>{r.to}</td>
               <td style={S.td}>{r.source === 'outside' ? 'outside MFF' : r.by || '-'}{r.source === 'benchmark' ? ' (benchmark)' : ''}</td>
               <td style={S.td}><span style={S.chip(STATUS[r.status] || S.GREY)}>{r.status}</span> {r.message}</td>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+      )}
+    />
   );
 }
 
@@ -218,7 +226,7 @@ function SwitchPanel({ coreApi, loaded, onFinished }) {
           <div style={{ cursor: 'pointer', fontSize: '13px', fontWeight: 600 }} onClick={() => setOpen(o => ({ ...o, [key]: !o[key] }))}>
             {open[key] ? '▾' : '▸'} {title}
           </div>
-          {open[key] && (key === 'who' ? <Switchers coreApi={coreApi} /> : <Log api={api} version={version} />)}
+          {open[key] && (key === 'who' ? <Switchers coreApi={coreApi} /> : <Log coreApi={coreApi} version={version} />)}
         </div>
       ))}
     </div>

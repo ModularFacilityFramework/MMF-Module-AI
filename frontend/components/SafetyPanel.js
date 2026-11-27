@@ -3,6 +3,7 @@
 // unsaved settings (ai.setup.safety.draft), the period (ai.setup.safety.days)
 // and the open sections (ai.setup.safety.sections).
 import React, { useCallback, useEffect, useState } from 'react';
+import SortedTable from './SortedTable';
 import * as S from './styles';
 
 const text = err => err.response?.data?.error || 'That did not work. Try again.';
@@ -109,19 +110,23 @@ function SafetyPanel({ coreApi }) {
         </select>
       </div>
       {data.delay.length ? (
-        <div style={S.tableWrapper}>
-          <table style={S.table}>
-            <thead style={S.thead}><tr><th style={S.th}>Asker</th><th style={S.th}>Answers checked</th><th style={S.th}>Average added delay</th><th style={S.th}>Longest</th></tr></thead>
-            <tbody>
-              {data.delay.map(d => (
-                <tr key={d.level}>
+        <SortedTable
+          coreApi={coreApi}
+          rows={data.delay}
+          rememberAs="ai.setup.safety.delay"
+          columns={{
+            level: d => (data.levels.find(l => l.key === d.level) || { label: d.level }).label,
+            answers: { value: d => d.answers, type: 'number' }, avg: { value: d => d.avgMs, type: 'number' }, max: { value: d => d.maxMs, type: 'number' }
+          }}
+          head={[{ key: 'level', label: 'Asker' }, { key: 'answers', label: 'Answers checked' }, { key: 'avg', label: 'Average added delay' }, { key: 'max', label: 'Longest' }]}
+          rowKey={d => d.level}
+          renderRow={d => (
+                <tr>
                   <td style={S.td}>{(data.levels.find(l => l.key === d.level) || { label: d.level }).label}</td>
                   <td style={S.td}>{d.answers}</td><td style={S.td}>{(d.avgMs / 1000).toFixed(2)} s</td><td style={S.td}>{(d.maxMs / 1000).toFixed(2)} s</td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+          )}
+        />
       ) : <div style={S.empty}>No checks in this period.</div>}
 
       <div style={{ ...S.heading, cursor: 'pointer' }} onClick={() => setSections(s => ({ ...s, counts: !s.counts }))}>{sections.counts ? '▾' : '▸'} Checks by kind</div>
@@ -131,20 +136,25 @@ function SafetyPanel({ coreApi }) {
 
       <div style={{ ...S.heading, cursor: 'pointer' }} onClick={() => setSections(s => ({ ...s, events: !s.events }))}>{sections.events ? '▾' : '▸'} Questions and answers stopped</div>
       {sections.events && (data.events.length ? (
-        <div style={S.tableWrapper}>
-          <table style={S.table}>
-            <thead style={S.thead}><tr><th style={S.th}>When</th><th style={S.th}>Person</th><th style={S.th}>Check</th><th style={S.th}>Result</th><th style={S.th}>Category</th><th style={S.th}>Answer</th></tr></thead>
-            <tbody>
-              {data.events.map(e => (
-                <tr key={e.id}>
+        <SortedTable
+          coreApi={coreApi}
+          rows={data.events}
+          rememberAs="ai.setup.safety.events"
+          defaultSort={{ column: 'when', direction: 'desc' }}
+          columns={{
+            when: { value: e => e.at, type: 'date' }, by: e => e.by, stage: e => STAGE_TEXT[e.stage] || e.stage,
+            result: e => RESULT_TEXT[e.result] || e.result, category: e => e.categories, answer: e => e.answer
+          }}
+          head={[{ key: 'when', label: 'When' }, { key: 'by', label: 'Person' }, { key: 'stage', label: 'Check' }, { key: 'result', label: 'Result' }, { key: 'category', label: 'Category' }, { key: 'answer', label: 'Answer' }]}
+          rowKey={e => e.id}
+          renderRow={e => (
+                <tr>
                   <td style={S.td}>{new Date(e.at).toLocaleString()}</td><td style={S.td}>{e.by}</td><td style={S.td}>{STAGE_TEXT[e.stage] || e.stage}</td>
                   <td style={S.td}><span style={S.chip(RESULT[e.result] || S.GREY)}>{RESULT_TEXT[e.result] || e.result}</span></td>
                   <td style={S.td}>{e.categories || '-'}</td><td style={{ ...S.td, fontFamily: 'monospace' }}>{e.answer}</td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+          )}
+        />
       ) : <div style={S.empty}>Nothing has been stopped.</div>)}
     </div>
   );

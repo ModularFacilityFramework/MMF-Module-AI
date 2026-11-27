@@ -2,6 +2,7 @@
 // who have never used AI tools. Search and filter persist (ai.setup.tools.filter).
 import React, { useCallback, useEffect, useState } from 'react';
 import Overview from './Overview';
+import SortedTable from './SortedTable';
 import * as S from './styles';
 
 const text = err => err.response?.data?.error || 'That did not work. Try again.';
@@ -97,7 +98,7 @@ function ToolsPanel({ coreApi }) {
         the AI. Tools run only inside MFF, as the person asking, with that person's permissions. The chat shows every time a tool is used.
         "Install" only switches on something that is already part of this module: nothing is downloaded.
       </div>
-      <Overview title="What the AI can do" items={data.overview} usePageState={usePageState} stateKey="ai.setup.tools.overviewOpen" />
+      <Overview title="What the AI can do" items={data.overview} coreApi={coreApi} stateKey="ai.setup.tools.overviewOpen" />
       {!data.loadedCanUse && (
         <div style={S.warningBanner}>
           {data.loadedModel ? `The loaded model (${data.loadedModel}) cannot use tools.` : 'No model is loaded.'} Tools work with: {data.capableModels.join(', ') || 'none'}.
@@ -132,37 +133,42 @@ function ToolsPanel({ coreApi }) {
         </div>
       )}
       {open.docs && (!data.docs ? <div style={S.empty}>The MFF docs are not available on this server: core has no docs (no MFF-docs checkout beside it) and MODULE_AI_DOCS_DIR is not set.</div> : (
-        <div style={{ ...S.tableWrapper, maxHeight: '320px' }}>
-          <table style={S.table}>
-            <thead style={S.thead}><tr><th style={S.th}>Doc</th><th style={S.th}>Area</th><th style={S.th}>For</th><th style={S.th}>What it covers</th></tr></thead>
-            <tbody>
-              {data.docs.map(d => (
-                <tr key={d.name}>
+        <SortedTable
+          coreApi={coreApi}
+          rows={data.docs}
+          rememberAs="ai.setup.tools.docs"
+          wrapperStyle={{ maxHeight: '320px' }}
+          columns={{ name: d => d.name, area: d => d.area, audience: d => ({ user: 'everyone', staff: 'facility staff', developer: 'developers' }[d.audience]), summary: d => d.summary }}
+          head={[{ key: 'name', label: 'Doc' }, { key: 'area', label: 'Area' }, { key: 'audience', label: 'For' }, { key: 'summary', label: 'What it covers' }]}
+          rowKey={d => d.name}
+          renderRow={d => (
+                <tr>
                   <td style={{ ...S.td, fontFamily: 'monospace', fontSize: '12px' }}>{d.name}</td><td style={S.td}>{d.area}</td>
                   <td style={S.td}>{{ user: 'everyone', staff: 'facility staff', developer: 'developers' }[d.audience]}{!d.indexed && <div style={S.small}>not in INDEX.json: default</div>}</td><td style={{ ...S.td, color: '#666' }}>{d.summary}</td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+          )}
+        />
       ))}
       <div style={{ ...S.heading, cursor: 'pointer' }} onClick={() => setOpen(o => ({ ...o, uses: !o.uses }))}>{open.uses ? '▾' : '▸'} Tools used in answers</div>
       {open.uses && (data.uses.length ? (
-        <div style={{ ...S.tableWrapper, maxHeight: '320px' }}>
-          <table style={S.table}>
-            <thead style={S.thead}><tr><th style={S.th}>When</th><th style={S.th}>Person</th><th style={S.th}>Tool</th><th style={S.th}>On</th><th style={S.th}>Result</th><th style={S.th}>Answer</th></tr></thead>
-            <tbody>
-              {data.uses.map(u => (
-                <tr key={u.id}>
+        <SortedTable
+          coreApi={coreApi}
+          rows={data.uses}
+          rememberAs="ai.setup.tools.uses"
+          wrapperStyle={{ maxHeight: '320px' }}
+          defaultSort={{ column: 'when', direction: 'desc' }}
+          columns={{ when: { value: u => u.at, type: 'date' }, by: u => u.by, tool: u => nameOf(u.tool), target: u => u.target, result: u => (u.ok ? 'worked' : 'failed'), answer: u => u.answer }}
+          head={[{ key: 'when', label: 'When' }, { key: 'by', label: 'Person' }, { key: 'tool', label: 'Tool' }, { key: 'target', label: 'On' }, { key: 'result', label: 'Result' }, { key: 'answer', label: 'Answer' }]}
+          rowKey={u => u.id}
+          renderRow={u => (
+                <tr>
                   <td style={S.td}>{new Date(u.at).toLocaleString()}</td><td style={S.td}>{u.by}</td><td style={S.td}>{nameOf(u.tool)}</td>
                   <td style={{ ...S.td, fontFamily: 'monospace', fontSize: '12px' }}>{u.target || '-'}</td>
                   <td style={S.td}><span style={S.chip(u.ok ? S.GREEN : S.RED)}>{u.ok ? 'worked' : 'failed'}</span></td>
                   <td style={{ ...S.td, fontFamily: 'monospace' }}>{u.answer}</td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+          )}
+        />
       ) : <div style={S.empty}>No tool has been used yet.</div>)}
       <div style={{ ...S.heading, cursor: 'pointer' }} onClick={() => setLogOpen(o => !o)}>{logOpen ? '▾' : '▸'} History of changes</div>
       {logOpen && (data.log.length

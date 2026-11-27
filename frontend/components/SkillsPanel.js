@@ -5,6 +5,7 @@
 // the file open in it (ai.setup.skills.editorFile).
 import React, { useCallback, useEffect, useState } from 'react';
 import Overview from './Overview';
+import SortedTable from './SortedTable';
 import * as S from './styles';
 
 const text = err => err.response?.data?.error || 'That did not work. Try again.';
@@ -201,7 +202,7 @@ function SkillsPanel({ coreApi }) {
         files) and follows them. The chat shows when a skill is loaded. Skills are written like Claude Code skills: a SKILL.md with a
         frontmatter, then the steps.
       </div>
-      <Overview title="Skills" items={data.overview} usePageState={usePageState} stateKey="ai.setup.skills.overviewOpen" />
+      <Overview title="Skills" items={data.overview} coreApi={coreApi} stateKey="ai.setup.skills.overviewOpen" />
       {!data.loadedCanUse && (
         <div style={S.warningBanner}>
           {data.loadedModel ? `The loaded model (${data.loadedModel}) cannot use skills: it answers without them.` : 'No model is loaded.'} Skills work with: {data.capableModels.join(', ') || 'none'}.
@@ -226,14 +227,21 @@ function SkillsPanel({ coreApi }) {
         )}
       </div>
       {shown.length ? (
-        <div style={S.tableWrapper}>
-          <table style={S.table}>
-            <thead style={S.thead}>
-              <tr><th style={S.th}>Skill</th><th style={S.th}>When the AI uses it</th><th style={S.th}>Tag</th><th style={S.th}>For</th><th style={S.th}>Files</th><th style={S.th}>State</th><th style={S.th} /></tr>
-            </thead>
-            <tbody>
-              {shown.map(s => (
-                <tr key={s.id} data-testid={`skill-${s.name}`}>
+        <SortedTable
+          coreApi={coreApi}
+          rows={shown}
+          rememberAs="ai.setup.skills.list"
+          columns={{
+            name: s => s.name, description: s => s.description, tag: s => s.tag, audience: s => AUDIENCE[s.audience] || 'everyone',
+            files: { value: s => s.files.length, type: 'number' }, state: s => (s.enabled ? 'on' : 'off')
+          }}
+          head={[
+            { key: 'name', label: 'Skill' }, { key: 'description', label: 'When the AI uses it' }, { key: 'tag', label: 'Tag' }, { key: 'audience', label: 'For' },
+            { key: 'files', label: 'Files' }, { key: 'state', label: 'State' }, { key: 'actions', label: '' }
+          ]}
+          rowKey={s => s.id}
+          renderRow={s => (
+                <tr data-testid={`skill-${s.name}`}>
                   <td style={{ ...S.td, ...mono }}>{s.name}</td>
                   <td style={S.td}>{s.description}</td>
                   <td style={S.td}>{s.tag || '-'}</td>
@@ -257,27 +265,27 @@ function SkillsPanel({ coreApi }) {
                     )}
                   </td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+          )}
+        />
       ) : <div style={S.empty}>{data.skills.length ? 'No skill matches.' : 'No skills yet.'}</div>}
 
       <div style={{ ...S.heading, cursor: 'pointer' }} onClick={() => setSections(s => ({ ...s, uses: !s.uses }))}>{sections.uses ? '▾' : '▸'} Skills loaded in answers</div>
       {sections.uses && (data.uses.length ? (
-        <div style={S.tableWrapper}>
-          <table style={S.table}>
-            <thead style={S.thead}><tr><th style={S.th}>When</th><th style={S.th}>Person</th><th style={S.th}>Skill</th><th style={S.th}>File</th><th style={S.th}>Model</th><th style={S.th}>Answer</th></tr></thead>
-            <tbody>
-              {data.uses.map(u => (
-                <tr key={u.id}>
+        <SortedTable
+          coreApi={coreApi}
+          rows={data.uses}
+          rememberAs="ai.setup.skills.uses"
+          defaultSort={{ column: 'when', direction: 'desc' }}
+          columns={{ when: { value: u => u.at, type: 'date' }, by: u => u.by, skill: u => u.skill, file: u => u.file || 'SKILL.md', model: u => u.model, answer: u => u.answer }}
+          head={[{ key: 'when', label: 'When' }, { key: 'by', label: 'Person' }, { key: 'skill', label: 'Skill' }, { key: 'file', label: 'File' }, { key: 'model', label: 'Model' }, { key: 'answer', label: 'Answer' }]}
+          rowKey={u => u.id}
+          renderRow={u => (
+                <tr>
                   <td style={S.td}>{when(u.at)}</td><td style={S.td}>{u.by}</td><td style={{ ...S.td, ...mono }}>{u.skill}</td>
                   <td style={{ ...S.td, ...mono }}>{u.file || 'SKILL.md'}</td><td style={S.td}>{u.model}</td><td style={{ ...S.td, ...mono }}>{u.answer}</td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+          )}
+        />
       ) : <div style={S.empty}>No skill has been loaded yet.</div>)}
       <div style={{ ...S.heading, cursor: 'pointer' }} onClick={() => setSections(s => ({ ...s, changes: !s.changes }))}>{sections.changes ? '▾' : '▸'} History of changes</div>
       {sections.changes && (data.changes.length

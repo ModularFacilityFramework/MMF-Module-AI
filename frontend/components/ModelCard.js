@@ -4,6 +4,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import SwitchPanel from './SwitchPanel';
 import ModelSettings from './ModelSettings';
+import SortedTable from './SortedTable';
 import * as S from './styles';
 
 const REFRESH_MS = 10000;
@@ -136,17 +137,24 @@ function ModelCard({ coreApi }) {
       </Section>
 
       <Section title="Models available on the server" open={open.catalogue} onToggle={() => toggle('catalogue')}>
-        <div style={S.tableWrapper}>
-          <table style={S.table}>
-            <thead style={S.thead}>
-              <tr>
-                <th style={S.th}>Model</th><th style={S.th}>What it can do</th>
-                <th style={S.th}>Longest input it was trained for</th><th style={S.th}>Files</th><th style={S.th}>State</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.catalogue.map(c => (
-                <tr key={c.keyword}>
+        <SortedTable
+          coreApi={coreApi}
+          rows={data.catalogue}
+          rememberAs="ai.setup.model.catalogue"
+          columns={{
+            model: c => c.label,
+            can: c => (c.capabilities.length ? c.capabilities.map(x => CAPABILITY_TEXT[x] || x).join('; ') : 'text only'),
+            trained: { value: c => (c.details ? c.details.nativeContext : null), type: 'number' },
+            files: { value: c => (c.details ? c.details.weightsGB : null), type: 'number' },
+            state: c => [c.keyword === data.keyword ? 'loaded' : '', c.knownToController ? '' : 'unknown to the server'].filter(Boolean).join(', ')
+          }}
+          head={[
+            { key: 'model', label: 'Model' }, { key: 'can', label: 'What it can do' }, { key: 'trained', label: 'Longest input it was trained for' },
+            { key: 'files', label: 'Files' }, { key: 'state', label: 'State' }
+          ]}
+          rowKey={c => c.keyword}
+          renderRow={c => (
+                <tr>
                   <td style={S.td}>{c.label} <span style={{ color: '#999' }}>({c.keyword})</span></td>
                   <td style={S.td}>{c.capabilities.length ? c.capabilities.map(x => CAPABILITY_TEXT[x] || x).join('; ') : 'text only'}</td>
                   <td style={S.td}>{c.details ? `${fmtInt(c.details.nativeContext)} tokens` : '-'}</td>
@@ -161,10 +169,8 @@ function ModelCard({ coreApi }) {
                     )}
                   </td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+          )}
+        />
         {data.extraOnController.length > 0 && (
           <p style={{ ...S.paragraph, fontSize: '13px' }}>
             The server also knows: {data.extraOnController.join(', ')} (not listed in MODULE_AI_MODELS, so not offered here).

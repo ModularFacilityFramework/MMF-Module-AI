@@ -1,6 +1,7 @@
 // Setup -> Usage: how much the AI is used. Figures only: no names and no text.
-// Range and sorting persist (ai.setup.usage.view).
+// The range persists (ai.setup.usage.view); the sort is core's (ai.setup.usage.table).
 import React, { useEffect, useState } from 'react';
+import SortedTable from './SortedTable';
 import * as S from './styles';
 
 const RANGES = [[1, 'Today and yesterday'], [7, '7 days'], [30, '30 days'], [90, '90 days'], [365, '1 year']];
@@ -9,14 +10,16 @@ const COLUMNS = [
   ['completion_tokens', 'Tokens written'], ['avg_first_ms', 'First word after'], ['avg_ms', 'Average answer'],
   ['max_queue_ms', 'Longest wait'], ['stopped', 'Stopped'], ['errors', 'Errors']
 ];
-const validView = v => Boolean(v) && RANGES.some(r => r[0] === v.days) && COLUMNS.some(c => c[0] === v.sort) && ['asc', 'desc'].includes(v.dir);
+const validView = v => Boolean(v) && RANGES.some(r => r[0] === v.days);
+// Raw values for core's sort: a day as a date, the rest as numbers (model as text).
+const SORT = Object.fromEntries(COLUMNS.map(([key]) => [key, key === 'day' ? { value: r => r.day, type: 'date' } : key === 'model' ? (r => r.model) : { value: r => r[key], type: 'number' }]));
 const int = n => Math.round(n || 0).toLocaleString();
 const sec = ms => (ms === null || ms === undefined ? '-' : `${(ms / 1000).toFixed(1)} s`);
 const size = b => (b > 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${(b / 1e6).toFixed(1)} MB`);
 
 function UsagePanel({ coreApi }) {
   const { api, usePageState } = coreApi;
-  const [view, setView] = usePageState('ai.setup.usage.view', { days: 7, sort: 'day', dir: 'desc' }, validView);
+  const [view, setView] = usePageState('ai.setup.usage.view', { days: 7 }, validView);
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
 
@@ -28,14 +31,8 @@ function UsagePanel({ coreApi }) {
     return () => { alive = false; };
   }, [api, view.days]);
 
-  const sortBy = key => setView(v => ({ ...v, sort: key, dir: v.sort === key && v.dir === 'desc' ? 'asc' : 'desc' }));
   const total = key => data.rows.reduce((n, r) => n + (r[key] || 0), 0);
-  const rows = data ? [...data.rows].sort((a, b) => {
-    const x = a[view.sort];
-    const y = b[view.sort];
-    const c = typeof x === 'string' ? x.localeCompare(String(y)) : (x || 0) - (y || 0);
-    return view.dir === 'asc' ? c : -c;
-  }) : [];
+  const rows = data ? data.rows : [];
   const cell = (r, key) => (key.endsWith('_ms') ? sec(r[key]) : typeof r[key] === 'number' ? int(r[key]) : r[key]);
 
   return (
@@ -61,24 +58,16 @@ function UsagePanel({ coreApi }) {
             </p>
           )}
           {rows.length ? (
-            <div style={S.tableWrapper}>
-              <table style={S.table}>
-                <thead style={S.thead}>
-                  <tr>
-                    {COLUMNS.map(([key, label]) => (
-                      <th key={key} style={{ ...S.th, cursor: 'pointer' }} onClick={() => sortBy(key)}>
-                        {label}{view.sort === key ? (view.dir === 'asc' ? ' ▲' : ' ▼') : ''}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map(r => (
-                    <tr key={`${r.day}-${r.keyword}`}>{COLUMNS.map(([key]) => <td key={key} style={S.td}>{cell(r, key)}</td>)}</tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <SortedTable
+              coreApi={coreApi}
+              rows={rows}
+              rememberAs="ai.setup.usage.table"
+              defaultSort={{ column: 'day', direction: 'desc' }}
+              columns={SORT}
+              head={COLUMNS.map(([key, label]) => ({ key, label }))}
+              rowKey={r => `${r.day}-${r.keyword}`}
+              renderRow={r => <tr>{COLUMNS.map(([key]) => <td key={key} style={S.td}>{cell(r, key)}</td>)}</tr>}
+            />
           ) : <div style={S.empty}>Nothing in this period.</div>}
         </>
       )}

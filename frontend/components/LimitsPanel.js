@@ -1,6 +1,7 @@
 // Setup -> Limits: every quota and limit, with its default. Unsaved edits
 // persist (ai.setup.limits.draft).
 import React, { useCallback, useEffect, useState } from 'react';
+import SortedTable from './SortedTable';
 import * as S from './styles';
 
 const text = err => err.response?.data?.error || 'That did not work. Try again.';
@@ -45,14 +46,20 @@ function LimitsPanel({ coreApi }) {
         Changes apply within a few seconds, without a restart. Answers already running keep the limits they started with.
         {!data.canEdit && ' Only administrators and developers can change them.'}
       </p>
-      <div style={S.tableWrapper}>
-        <table style={S.table}>
-          <thead style={S.thead}>
-            <tr>{['Limit', 'Value', 'Allowed', 'Default', ''].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
-          </thead>
-          <tbody>
-            {data.specs.map(s => (
-              <tr key={s.key}>
+      <SortedTable
+        coreApi={coreApi}
+        rows={data.specs}
+        rememberAs="ai.setup.limits.table"
+        columns={{
+          label: s => s.label,
+          value: { value: s => data.values[s.key], type: 'number' }, // the saved value: rows do not move while typing
+          allowed: { value: s => s.min, type: 'number' },
+          default: { value: s => data.defaults[s.key], type: 'number' }
+        }}
+        head={[{ key: 'label', label: 'Limit' }, { key: 'value', label: 'Value' }, { key: 'allowed', label: 'Allowed' }, { key: 'default', label: 'Default' }, { key: 'actions', label: '' }]}
+        rowKey={s => s.key}
+        renderRow={s => (
+              <tr>
                 <td style={S.td}>{s.label}{s.help && <div style={S.small}>{s.help}</div>}</td>
                 <td style={S.td}>
                   <input
@@ -74,10 +81,8 @@ function LimitsPanel({ coreApi }) {
                   )}
                 </td>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+        )}
+      />
       {error && <div style={S.errorBanner}>{error}</div>}
       {data.canEdit && (
         <div style={{ marginTop: '12px' }}>

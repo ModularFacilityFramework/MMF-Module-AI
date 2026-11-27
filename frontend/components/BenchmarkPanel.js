@@ -2,6 +2,7 @@
 // automatic checks and 1-5 scores. View and unsaved edits persist
 // (ai.setup.benchmark.view, ai.setup.benchmark.draft).
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import SortedTable from './SortedTable';
 import * as S from './styles';
 
 const text = err => err.response?.data?.error || 'That did not work. Try again.';
@@ -43,7 +44,8 @@ function csvOf(run) {
     .map(row => row.map(cell).join(',')).join('\r\n');
 }
 
-function Results({ api, run, runId, view, set, canScore, reload }) {
+function Results({ coreApi, run, runId, view, set, canScore, reload }) {
+  const { api } = coreApi;
   const [error, setError] = useState('');
   const perModel = run.models.map((m) => {
     const rs = run.results.filter(r => r.keyword === m.keyword);
@@ -76,14 +78,27 @@ function Results({ api, run, runId, view, set, canScore, reload }) {
 
   return (
     <div data-testid="results">
-      <div style={S.tableWrapper}>
-        <table style={S.table}>
-          <thead style={S.thead}>
-            <tr>{['Model', 'Correct', 'Average score', 'Speed', 'First word after', 'Loading time', 'GPU memory', 'Long chats at once'].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
-          </thead>
-          <tbody>
-            {perModel.map(m => (
-              <tr key={m.keyword}>
+      <SortedTable
+        coreApi={coreApi}
+        rows={perModel}
+        rememberAs="ai.setup.benchmark.models"
+        columns={{
+          model: m => m.label,
+          correct: { value: m => (m.checked ? m.passed / m.checked : null), type: 'number' },
+          score: { value: m => (hide ? null : m.score), type: 'number' }, // hidden scores must not be revealed by sorting
+          speed: { value: m => m.speed, type: 'number' },
+          first: { value: m => m.first, type: 'number' },
+          loading: { value: m => m.loadSeconds, type: 'number' },
+          memory: { value: m => m.gpuMemoryMiB, type: 'number' },
+          concurrency: { value: m => m.maxConcurrency, type: 'number' }
+        }}
+        head={[
+          { key: 'model', label: 'Model' }, { key: 'correct', label: 'Correct' }, { key: 'score', label: 'Average score' }, { key: 'speed', label: 'Speed' },
+          { key: 'first', label: 'First word after' }, { key: 'loading', label: 'Loading time' }, { key: 'memory', label: 'GPU memory' }, { key: 'concurrency', label: 'Long chats at once' }
+        ]}
+        rowKey={m => m.keyword}
+        renderRow={m => (
+              <tr>
                 <td style={S.td}>{m.label}</td>
                 <td style={S.td}>{m.passed} of {m.checked}</td>
                 <td style={S.td}>{hide ? 'hidden until scored' : m.score === null ? '-' : m.score.toFixed(1)}</td>
@@ -93,10 +108,8 @@ function Results({ api, run, runId, view, set, canScore, reload }) {
                 <td style={S.td}>{m.gpuMemoryMiB ? `${(m.gpuMemoryMiB / 1024).toFixed(1)} GiB` : '-'}</td>
                 <td style={S.td}>{m.maxConcurrency ? m.maxConcurrency.toFixed(1) : '-'}</td>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+        )}
+      />
       <div style={S.heading}>Speed (higher is better)</div>
       <Bars rows={perModel.map(m => ({ label: m.label, value: m.speed }))} unit="tokens/s" />
       <div style={{ margin: '12px 0', fontSize: '13px' }}>
@@ -264,7 +277,7 @@ function BenchmarkPanel({ coreApi }) {
             {data.runs.map(r => <option key={r.id} value={r.id}>{new Date(r.startedAt).toLocaleString()}: {r.models.join(', ')}{r.think ? ' (thinking)' : ''}</option>)}
           </select>
           {info && <div style={{ marginBottom: '10px' }}><span style={S.chip(STATUS[info.status] || S.GREY)}>{info.status}</span> <span style={S.small}>{info.message} {info.by && `Started by ${info.by}.`}</span></div>}
-          {run && run.id === runId && !run.empty && <Results api={api} run={run} runId={runId} view={view} set={set} canScore={data.canRun} reload={loadRun} />}
+          {run && run.id === runId && !run.empty && <Results coreApi={coreApi} run={run} runId={runId} view={view} set={set} canScore={data.canRun} reload={loadRun} />}
           {run && run.id === runId && run.empty && <div style={S.empty}>No results in this run.</div>}
         </>
       )}
