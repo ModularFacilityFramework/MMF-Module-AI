@@ -8,6 +8,15 @@ const Markdown = React.lazy(() => import('./Markdown'));
 
 const seconds = ms => (ms < 1000 ? 'less than a second' : `${Math.round(ms / 1000)} s`);
 
+// "10:32" today, else "26 Nov 2026, 10:32" (the viewer's own clock).
+function when(at) {
+  const d = new Date(at);
+  if (!at || Number.isNaN(d.getTime())) return '';
+  const today = new Date().toDateString() === d.toDateString();
+  return today ? d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+    : d.toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
 export function fileSize(bytes) {
   if (bytes >= 1048576) return `${(bytes / 1048576).toFixed(1)} MB`;
   if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
@@ -46,6 +55,7 @@ export function Question({ message, canEdit, onEdit, onDownload }) {
             </div>
           )}
           <div className={css.messageTools}>
+            {message.at && <span className={css.muted} title={new Date(message.at).toLocaleString()} data-testid="message-time">{when(message.at)}</span>}
             <CopyButton text={message.text} />
             {canEdit && <button type="button" className={css.linkButton} onClick={() => setDraft(message.text)}>Edit</button>}
           </div>
@@ -136,7 +146,7 @@ export function Answer({ message, live, thinkingOpen, onToggleThinking, toolsOpe
           {message.content && <CopyButton text={message.content} />}
           {canRegenerate && <button type="button" className={css.linkButton} onClick={onRegenerate}>Answer again</button>}
           <span className={css.muted}>
-            {[message.model, message.usage && `${message.usage.completion} tokens`, message.ms > 0 && seconds(message.ms)].filter(Boolean).join(' · ')}
+            {[when(message.at), message.model, message.usage && `${message.usage.completion} tokens`, message.ms > 0 && seconds(message.ms)].filter(Boolean).join(' · ')}
           </span>
         </div>
       )}

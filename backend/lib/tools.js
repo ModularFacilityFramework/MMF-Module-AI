@@ -10,6 +10,7 @@ const fileTools = require('./fileTools');
 const safety = require('./safety');
 const docs = require('./docs');
 const slurmTools = require('./slurmTools');
+const webTools = require('./webTools');
 
 const MAX_RESULT_CHARS = 9000;
 
@@ -185,15 +186,12 @@ const CATALOGUE = [
     run: (args, ctx) => fileTools.make(args, ctx)
   },
   ...docs.TOOLS,
-  ...slurmTools.TOOLS
+  ...slurmTools.TOOLS,
+  ...webTools.TOOLS
 ];
 
 // Shown in the catalogue, but not available.
 const UNAVAILABLE = [
-  {
-    key: 'web_search', name: 'Web search', what: 'Would let the AI search the internet.', example: 'What is the newest paper about this enzyme?',
-    sees: 'The words the AI searches for would leave the facility.', risk: 'reaches the internet', needs: 'A search provider and a decision by the facility. Not built.'
-  }
 ];
 
 async function readAttached(args, ctx) {

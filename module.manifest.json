@@ -1,7 +1,7 @@
 {
   "id": "ai",
   "label": "AI",
-  "version": "0.1.23",
+  "version": "0.1.24",
   "tablePrefix": "ai_",
   "mountPath": "/ai",
   "backendEntry": "backend/index.js",
@@ -66,6 +66,18 @@
     {
       "key": "SWITCH_TIMEOUT_S",
       "description": "Optional. Seconds to wait for a model switch to finish (default 600)."
+    },
+    {
+      "key": "GUARD_URL",
+      "description": "Optional. Base URL of the guard model (Qwen3Guard, vllm-guard.service on the AI GPU host), e.g. http://192.168.1.16:8002. Without it no question or answer is checked by the guard."
+    },
+    {
+      "key": "DOCS_DIR",
+      "description": "Optional. Folder of the MFF docs, used only when core offers no coreApi.docs."
+    },
+    {
+      "key": "SEARXNG_URL",
+      "description": "Optional. Base URL of the facility's SearXNG for the web_search tool, on the backend host only, e.g. http://127.0.0.1:8888."
     }
   ]
 }

@@ -20,7 +20,7 @@ const TOOLS = [
   { name: 'ChimeraX figures', status: 'planned', note: '' },
   { name: 'Agentic Coot', status: 'planned', note: 'Coot already has many skills of its own.' },
   { name: 'Read databases', status: 'planned', note: 'Later.' },
-  { name: 'Web search', status: 'planned', note: 'Needs a decision: the words searched for would leave the facility.' }
+  { name: 'Web search and reading web pages', status: 'tested', note: 'Tools below (Web); tested 27/11/2026; through the facility\'s own SearXNG; public pages only; the guard reads search words and pages; the AI cites its URLs. Approved by the user 27/11/2026.' }
 ];
 
 const PLANNED_SKILLS = [

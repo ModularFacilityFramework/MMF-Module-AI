@@ -135,7 +135,7 @@ const SCOPE_PROMPT = 'You decide whether a message to the AI assistant of a stru
   + 'how finance and charges work); its servers and computing (HPC, Slurm, GPUs, storage, software); structural biology and the science around it '
   + '(macromolecular crystallography, cryo-EM, proteins, biochemistry, molecular biology, lab methods, data processing, model building, figures, '
   + 'and the chemistry, physics, maths, calculations, unit conversions, statistics, data analysis and programming that this work needs); scientific writing (papers, grants, materials and methods, reports, '
-  + 'posters, presentations, emails about this work). Also in scope: greetings, thanks, questions about the assistant itself, requests to reformat, '
+  + 'posters, presentations, emails about this work). Also in scope: greetings, thanks, questions about the assistant itself, questions about the date, the time or the calendar, requests to reformat, '
   + 'translate, shorten or continue earlier answers, and follow-ups to an in-scope conversation. '
   + 'Out of scope: everything else, for example general news, sport, entertainment, celebrities, holidays, shopping, personal finance, dating, '
   + 'homework or coursework in unrelated subjects. When a message could reasonably belong to this work (for example a calculation, a unit conversion, a chemistry, biology or physics question, a coding or computing question, or a writing task), answer IN; answer OUT only when it is clearly about something else. Arithmetic and calculations of any kind are always IN. Reply with exactly one word: IN or OUT.';

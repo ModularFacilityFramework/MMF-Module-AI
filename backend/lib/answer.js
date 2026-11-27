@@ -12,6 +12,7 @@ const tools = require('./tools');
 const skills = require('./skills');
 const safety = require('./safety');
 const docs = require('./docs');
+const webTools = require('./webTools');
 
 const { HttpError } = storage;
 const MAX_TOOL_ROUNDS = 5;
@@ -21,6 +22,19 @@ const TOOL_PROMPT_OVERHEAD = 500;  // what the chat template adds around tool de
 const TOOL_RESULT_RESERVE = 5000;  // room kept for tool answers
 const TOOL_RULE = 'You have tools. To make or change a file you must call the tool in this answer; never say that a file was made or changed unless its tool call succeeded in this answer.';
 const DEFAULT_SYSTEM = 'You are a helpful assistant for the members of a research facility. Answer clearly and say when you are not sure. Format answers in Markdown.';
+
+// The first line of every system prompt, for every model, made fresh for each
+// request: the model must never say it does not know the date or time.
+const TZ = 'Europe/London';
+function dateLine(sentAt, now = new Date()) {
+  const long = d => new Intl.DateTimeFormat('en-GB', {
+    timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short'
+  }).format(d);
+  const iso = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+  const sent = sentAt && !Number.isNaN(new Date(sentAt).getTime()) ? ` The user's message was sent on ${long(new Date(sentAt))}.` : '';
+  return `Current date and time: ${long(now)} (time zone ${TZ}; today is ${iso}).${sent} `
+    + 'Use these whenever the date or time matters, for example for "today", "tomorrow" or "how many days until"; never say that you do not know the date or time.';
+}
 
 // Who may be answered right now? Throws a clear error otherwise.
 async function requireReady(coreApi) {
@@ -192,7 +206,9 @@ function startAnswer(coreApi, { user, root, chatId, think, limits }) {
       const toolReserve = available.length
         ? await context.countTokens(o.cfg, o.vllm.modelId, JSON.stringify(toolDefs)) + TOOL_PROMPT_OVERHEAD + TOOL_RESULT_RESERVE : 0;
       const docsPrompt = docsMissing ? docs.UNAVAILABLE : docs.PROMPT(available.filter(t => docs.TOOLS.includes(t)).map(t => t.key));
-      const fullSystem = [system, available.length ? TOOL_RULE : '', docsPrompt, skillSet.prompt].filter(Boolean).join('\n\n').trim();
+      const webPrompt = available.some(t => webTools.TOOLS.includes(t)) ? webTools.PROMPT : '';
+      const fullSystem = [dateLine(history[history.length - 1].at), system, available.length ? TOOL_RULE : '', docsPrompt, webPrompt, skillSet.prompt]
+        .filter(Boolean).join('\n\n').trim();
       const built = await context.build(
         { cfg: o.cfg, modelId: o.vllm.modelId, root, chatId, vision: caps.includes('vision'), maxModelLen, tools: available.length > 0 },
         history, { system: fullSystem, answerReserve: maxTokens + toolReserve });
@@ -245,7 +261,7 @@ function startAnswer(coreApi, { user, root, chatId, think, limits }) {
             ? { ok: false, text: 'Error: too many tool calls for one answer.' }
             : await tools.call(available, c.name, c.arguments, {
               root, chatId, history, limits, created: g.files, pool: coreApi.pool, userId: user.id, answerId: assistantId, keyword,
-              coreApi, cfg: o.cfg, level
+              coreApi, cfg: o.cfg, level, guardOn: pol.guard, guardDown: sset.guardDown
             });
           // Every tool use, per answer: the tool and what it was used on (a doc
           // or skill name), never the question, the arguments or the result.
@@ -267,6 +283,12 @@ function startAnswer(coreApi, { user, root, chatId, think, limits }) {
         // Last round, or hardly any room left: no more tools, just answer.
         if (round + 1 >= MAX_TOOL_ROUNDS || room < 2500) {
           delete body.tools;
+          // Without this the model may try one more tool call, and write nothing.
+          body.messages.push({
+            role: 'user',
+            content: '(System note: no more tool calls are possible for this answer. Answer the question now from what the tools have returned, '
+              + 'say what is still unknown, and cite the sources you used.)'
+          });
         }
       }
       gens.flush(g);
@@ -320,4 +342,4 @@ function startAnswer(coreApi, { user, root, chatId, think, limits }) {
   });
 }
 
-module.exports = { startAnswer, requireReady, DEFAULT_SYSTEM };
+module.exports = { startAnswer, requireReady, DEFAULT_SYSTEM, dateLine };

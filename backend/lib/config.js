@@ -57,6 +57,8 @@ function readConfig(coreApi) {
     guardUrl: (cfg.GUARD_URL || '').replace(/\/+$/, ''),
     // the MFF docs folder, when core does not offer coreApi.docs; optional
     docsDir: cfg.DOCS_DIR || '',
+    // the facility's SearXNG for web_search, e.g. http://127.0.0.1:8888; optional
+    searxngUrl: (cfg.SEARXNG_URL || '').replace(/\/+$/, ''),
     ssh: {
       host: cfg.CTL_SSH_HOST || '',
       port: positiveInt(cfg.CTL_SSH_PORT, 22),
@@ -79,7 +81,7 @@ function configStatus(coreApi) {
   const cfg = coreApi.getModuleConfig() || {};
   const parsed = readConfig(coreApi);
   return {
-    keys: REQUIRED_KEYS.concat(['GUARD_URL', 'DOCS_DIR', 'VLLM_API_KEY', 'CTL_SSH_PORT', 'STORAGE_SUBDIR', 'REQUEST_TIMEOUT_S', 'SWITCH_TIMEOUT_S'])
+    keys: REQUIRED_KEYS.concat(['GUARD_URL', 'DOCS_DIR', 'SEARXNG_URL', 'VLLM_API_KEY', 'CTL_SSH_PORT', 'STORAGE_SUBDIR', 'REQUEST_TIMEOUT_S', 'SWITCH_TIMEOUT_S'])
       .map(key => ({ key: `MODULE_AI_${key}`, required: REQUIRED_KEYS.includes(key), set: Boolean(cfg[key]) })),
     missing: parsed.missing.map(k => `MODULE_AI_${k}`),
     models: parsed.models,
