@@ -10,6 +10,13 @@ const TOOLS = [
   { name: 'Edit Word and Excel files, make new files', status: 'tested', note: 'The original is never changed.' },
   { name: 'Skills (load_skill, read_skill_file)', status: 'tested', note: 'Setup -> Skills; tested 26/11/2026.' },
   { name: 'Safety: guard model, scope check, output scan, audience', status: 'tested', note: 'Setup -> Safety; tested 26/11/2026.' },
+  { name: 'MCP servers: tools from other services', status: 'tested', note: 'Setup -> Tools, MCP servers; each MCP tool is installed, given an audience, read by the guard and logged like any tool; tested 27/11/2026.' },
+  { name: 'PDB: official PDBe MCP servers (EMBL-EBI): PDBe API and PDBe Search', status: 'tested', note: 'pdbe-mcp-server 2.0.1 on the backend host (127.0.0.1); tested 27/11/2026.' },
+  { name: 'Literature and bio databases: BioMCP (PubMed, Europe PMC, PubTator3, UniProt, InterPro, STRING, PDB, AlphaFold, ...)', status: 'tested', note: 'biomcp-cli 0.9.3 (MIT) on the backend host (127.0.0.1); tested 27/11/2026.' },
+  { name: 'gemmi: read MTZ, mmCIF and PDB files', status: 'planned', note: 'As a direct tool, and inside the code sandbox.' },
+  { name: 'OCR: scanned PDFs and photos of documents to text', status: 'planned', note: '' },
+  { name: 'Code sandbox: Python with numpy, scipy, pandas, matplotlib, biopython, gemmi, rdkit; charts in the chat', status: 'planned', note: 'Isolated: no network, no access to user files except what the chat hands in, CPU, memory and time limits.' },
+  { name: 'Speech to text (Whisper) with a microphone button', status: 'planned', note: 'On the AI server next to the model, if memory allows.' },
   { name: 'MFF docs: index, search and read', status: 'tested', note: 'Tools below (MFF docs); tested 26/11/2026. The AI looks there first for questions about MFF, a module or a procedure. Which doc is for whom: INDEX.json in the docs, else user guides for everyone and the rest for developers.' },
   { name: 'My projects in MFF: bookings, samples, data, jobs', status: 'planned', note: 'Own projects only; the project and its members in core decide.' },
   { name: 'Finance: how charges are calculated and the current recovery rates', status: 'planned', note: 'Details (companies, costs, invoices) only for facility staff and developers.' },
@@ -19,7 +26,7 @@ const TOOLS = [
   { name: 'Server status', status: 'planned', note: 'Developers and administrators only.' },
   { name: 'ChimeraX figures', status: 'planned', note: '' },
   { name: 'Agentic Coot', status: 'planned', note: 'Coot already has many skills of its own.' },
-  { name: 'Read databases', status: 'planned', note: 'Later.' },
+  { name: 'Read databases (MFF MariaDB, MSSQL): read-only, developers only', status: 'planned', note: 'Waits for dedicated read-only accounts from the user.' },
   { name: 'Web search and reading web pages', status: 'tested', note: 'Tools below (Web); tested 27/11/2026; through the facility\'s own SearXNG; public pages only; the guard reads search words and pages; the AI cites its URLs. Approved by the user 27/11/2026.' }
 ];
 

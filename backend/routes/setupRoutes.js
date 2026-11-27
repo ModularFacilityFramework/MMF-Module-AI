@@ -17,6 +17,7 @@ const precision = require('../lib/precision');
 const safety = require('../lib/safety');
 const capabilities = require('../lib/capabilities');
 const docs = require('../lib/docs');
+const mcp = require('../lib/mcp');
 const benchmark = require('../lib/benchmark');
 const perms = require('../lib/permissions');
 const { DEFAULT_SYSTEM } = require('../lib/answer');
@@ -284,7 +285,7 @@ module.exports = function buildSetupRouter(coreApi) {
     const docList = await docs.overview(coreApi, cfg).catch(() => null);
     res.json({
       tools: [
-        ...tools.CATALOGUE.map(t => ({ ...tools.card(t), available: true, installed: Boolean(state[t.key]), ...(state[t.key] || {}) })),
+        ...(await tools.catalogue(coreApi.pool)).map(t => ({ ...tools.card(t), available: true, installed: Boolean(state[t.key]), ...(state[t.key] || {}) })),
         ...tools.UNAVAILABLE.map(t => ({ ...tools.card(t), available: false, installed: false }))
       ],
       capableModels: cfg.models.filter(m => m.capabilities.includes('tools')).map(m => m.label),
@@ -293,6 +294,7 @@ module.exports = function buildSetupRouter(coreApi) {
       roles: await coreApi.listRoles(),
       canEdit: await perms.isPolicyUser(coreApi, req.user),
       overview: capabilities.TOOLS,
+      mcpServers: await mcp.overview(coreApi.pool, { fresh: req.query.fresh === '1' }),
       docs: docList,
       docsSource: await docs.sourceName(coreApi, cfg),
       uses: uses.map(u => ({
@@ -301,6 +303,19 @@ module.exports = function buildSetupRouter(coreApi) {
       })),
       log: log.map(r => ({ id: r.id, tool: r.tool, action: r.action, at: r.created_at, by: people.get(Number(r.user_id)) || 'a removed user' }))
     });
+  }));
+
+  // MCP servers (mcp.js): their tools then appear among the tools above.
+  router.post('/setup/mcp-servers', ...policyGate, wrap(async (req, res) => {
+    res.json({ servers: await mcp.saveServer(coreApi.pool, req.body, req.user.id) });
+  }));
+  router.post('/setup/mcp-servers/:key/enabled', ...policyGate, wrap(async (req, res) => {
+    await mcp.setServerEnabled(coreApi.pool, req.params.key, req.body && req.body.enabled, req.user.id);
+    res.json({ success: true });
+  }));
+  router.delete('/setup/mcp-servers/:key', ...policyGate, wrap(async (req, res) => {
+    await mcp.removeServer(coreApi.pool, req.params.key, req.user.id);
+    res.json({ success: true });
   }));
 
   router.post('/setup/tools/:key', ...policyGate, wrap(async (req, res) => {

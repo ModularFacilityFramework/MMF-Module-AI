@@ -7,7 +7,8 @@ import * as S from './styles';
 
 const text = err => err.response?.data?.error || 'That did not work. Try again.';
 const SHOW = [['all', 'All'], ['installed', 'Installed'], ['catalogue', 'Not installed']];
-const validFilter = v => Boolean(v) && typeof v.search === 'string' && SHOW.some(s => s[0] === v.show);
+const validFilter = v => Boolean(v) && typeof v.search === 'string' && SHOW.some(s => s[0] === v.show) && (v.source === undefined || typeof v.source === 'string');
+const validServerDraft = v => v === null || (Boolean(v) && typeof v.key === 'string' && typeof v.name === 'string' && typeof v.url === 'string');
 const AUDIENCE = [['user', 'everyone'], ['staff', 'facility staff and developers'], ['developer', 'developers and administrators only']];
 const RISK = { 'reads only': S.GREEN, 'makes new files': S.BLUE, 'reads your MFF data': 'warning', 'reaches the internet': S.RED };
 
@@ -16,6 +17,7 @@ function ToolCard({ tool, data, act }) {
     <div style={{ border: '1px solid #dee2e6', borderRadius: '4px', padding: '14px', marginBottom: '10px' }} data-testid={`tool-${tool.key}`}>
       <div style={{ fontSize: '14px', fontWeight: 600 }}>
         {tool.name}{' '}
+        {tool.mcp && <span style={S.chip('#17a2b8')} title={`MCP server ${tool.mcp.serverName}, tool ${tool.mcp.tool}`}>MCP</span>}
         <span style={S.chip(RISK[tool.risk] || S.GREY)}>{tool.risk}</span>
         {tool.installed && <span style={S.chip(tool.enabled ? S.GREEN : S.GREY)}>{tool.enabled ? 'on' : 'off'}</span>}
       </div>
@@ -67,7 +69,9 @@ function ToolsPanel({ coreApi }) {
   const { api, usePageState } = coreApi;
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
-  const [filter, setFilter] = usePageState('ai.setup.tools.filter', { search: '', show: 'all' }, validFilter);
+  const [filter, setFilter] = usePageState('ai.setup.tools.filter', { search: '', show: 'all', source: 'all' }, validFilter);
+  const [serverDraft, setServerDraft, resetServerDraft] = usePageState('ai.setup.tools.mcpDraft', null, validServerDraft);
+  const [serverError, setServerError] = useState('');
   const [logOpen, setLogOpen] = usePageState('ai.setup.tools.logOpen', false, [true, false]);
   const [open, setOpen] = usePageState('ai.setup.tools.sections', { docs: false, uses: false }, v => Boolean(v) && typeof v.docs === 'boolean' && typeof v.uses === 'boolean');
 
@@ -84,8 +88,15 @@ function ToolsPanel({ coreApi }) {
 
   if (!data) return error ? <div style={S.errorBanner}>{error}</div> : <div style={S.loading}>Loading...</div>;
   const q = filter.search.trim().toLowerCase();
+  const servers = data.mcpServers || [];
+  // a source that no longer exists falls back to all
+  const source = filter.source && (filter.source === 'builtin' || servers.some(sv => sv.key === filter.source)) ? filter.source : 'all';
   const match = t => (!q || `${t.name} ${t.what} ${t.example}`.toLowerCase().includes(q))
-    && (filter.show === 'all' || (filter.show === 'installed') === t.installed);
+    && (filter.show === 'all' || (filter.show === 'installed') === t.installed)
+    && (source === 'all' || (source === 'builtin' ? !t.mcp : t.mcp && t.mcp.server === source));
+  const serverAct = async (fn) => {
+    try { await fn(); setServerError(''); return true; } catch (err) { setServerError(text(err)); return false; } finally { load(); }
+  };
   const installed = data.tools.filter(t => t.installed && match(t));
   const catalogue = data.tools.filter(t => !t.installed && match(t));
   const nameOf = key => (data.tools.find(t => t.key === key) || { name: key }).name;
@@ -109,6 +120,11 @@ function ToolsPanel({ coreApi }) {
         <input type="search" style={S.field} placeholder="Search tools" aria-label="Search tools" value={filter.search} onChange={e => setFilter(f => ({ ...f, search: e.target.value }))} />{' '}
         <select style={S.field} aria-label="Show" value={filter.show} onChange={e => setFilter(f => ({ ...f, show: e.target.value }))}>
           {SHOW.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+        </select>{' '}
+        <select style={S.field} aria-label="Source" value={source} onChange={e => setFilter(f => ({ ...f, source: e.target.value }))}>
+          <option value="all">All sources</option>
+          <option value="builtin">Built into this module</option>
+          {servers.map(sv => <option key={sv.key} value={sv.key}>MCP: {sv.name}</option>)}
         </select>
       </div>
       {filter.show !== 'catalogue' && (
@@ -122,6 +138,53 @@ function ToolsPanel({ coreApi }) {
           <div style={S.heading}>Could be installed, and planned</div>
           {catalogue.length ? catalogue.map(t => <ToolCard key={t.key} tool={t} data={data} act={act} />) : <div style={S.empty}>Nothing else{q ? ' that matches' : ''}.</div>}
         </>
+      )}
+      <div style={S.heading}>MCP servers</div>
+      <p style={{ ...S.paragraph, fontSize: '13px', marginTop: 0 }}>
+        An MCP server offers more tools (for example PDBe or BioMCP). Its tools appear above, each to be installed and given an audience like any
+        other; the guard reads what the AI sends and what comes back, and every use is logged.
+      </p>
+      {servers.length ? (
+        <SortedTable
+          coreApi={coreApi}
+          rows={servers}
+          rememberAs="ai.setup.tools.mcpServers"
+          columns={{ key: v => v.key, name: v => v.name, url: v => v.url, tools: { value: v => v.tools, type: 'number' }, state: v => (!v.enabled ? 'off' : v.error ? 'error' : 'on') }}
+          head={[{ key: 'key', label: 'Key' }, { key: 'name', label: 'Name' }, { key: 'url', label: 'Address' }, { key: 'tools', label: 'Tools' }, { key: 'state', label: 'State' }, { key: 'actions', label: '' }]}
+          rowKey={v => v.key}
+          renderRow={v => (
+            <tr data-testid={`mcp-${v.key}`}>
+              <td style={{ ...S.td, fontFamily: 'monospace' }}>{v.key}</td><td style={S.td}>{v.name}</td>
+              <td style={{ ...S.td, fontFamily: 'monospace', fontSize: '12px' }}>{v.url}</td>
+              <td style={S.td}>{v.tools === null ? '-' : v.tools}</td>
+              <td style={S.td}>
+                <span style={S.chip(!v.enabled ? S.GREY : v.error ? S.RED : S.GREEN)}>{!v.enabled ? 'off' : v.error ? 'error' : 'on'}</span>
+                {v.error && <div style={S.small}>{v.error}</div>}
+              </td>
+              <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
+                {data.canEdit && (
+                  <>
+                    <button type="button" style={S.button(v.enabled ? S.GREY : S.BLUE)} onClick={() => serverAct(() => api.post(`/ai/setup/mcp-servers/${v.key}/enabled`, { enabled: !v.enabled }))}>{v.enabled ? 'Switch off' : 'Switch on'}</button>
+                    <button type="button" style={S.button(S.RED)} onClick={() => serverAct(() => api.delete(`/ai/setup/mcp-servers/${v.key}`))}>Remove</button>
+                  </>
+                )}
+              </td>
+            </tr>
+          )}
+        />
+      ) : <div style={S.empty}>No MCP servers.</div>}
+      {serverError && <div style={S.errorBanner}>{serverError}</div>}
+      {data.canEdit && !serverDraft && (
+        <button type="button" style={{ ...S.button(S.GREEN), marginTop: '8px' }} onClick={() => setServerDraft({ key: '', name: '', url: 'http://127.0.0.1:' })}>Add an MCP server</button>
+      )}
+      {data.canEdit && serverDraft && (
+        <div style={{ border: '1px solid #dee2e6', borderRadius: '4px', padding: '12px', marginTop: '8px', fontSize: '13px' }}>
+          <input style={{ ...S.field, width: '120px' }} aria-label="Server key" placeholder="key, e.g. pdbe_api" value={serverDraft.key} onChange={e => setServerDraft(d => ({ ...d, key: e.target.value }))} />{' '}
+          <input style={{ ...S.field, width: '200px' }} aria-label="Server name" placeholder="Name" value={serverDraft.name} onChange={e => setServerDraft(d => ({ ...d, name: e.target.value }))} />{' '}
+          <input style={{ ...S.field, width: '280px' }} aria-label="Server address" placeholder="http://127.0.0.1:8901/api/" value={serverDraft.url} onChange={e => setServerDraft(d => ({ ...d, url: e.target.value }))} />{' '}
+          <button type="button" style={S.button(S.BLUE)} onClick={async () => { if (await serverAct(() => api.post('/ai/setup/mcp-servers', serverDraft))) resetServerDraft(); }}>Add</button>
+          <button type="button" style={S.button(S.GREY)} onClick={() => resetServerDraft()}>Cancel</button>
+        </div>
       )}
       <div style={{ ...S.heading, cursor: 'pointer' }} onClick={() => setOpen(o => ({ ...o, docs: !o.docs }))}>
         {open.docs ? '▾' : '▸'} MFF docs the AI can read{data.docs ? ` (${data.docs.length}, from ${data.docsSource === 'core' ? 'core' : 'MODULE_AI_DOCS_DIR'})` : ': not available here'}

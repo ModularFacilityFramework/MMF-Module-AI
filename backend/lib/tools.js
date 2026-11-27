@@ -11,6 +11,7 @@ const safety = require('./safety');
 const docs = require('./docs');
 const slurmTools = require('./slurmTools');
 const webTools = require('./webTools');
+const mcp = require('./mcp');
 
 const MAX_RESULT_CHARS = 9000;
 
@@ -226,7 +227,11 @@ async function readAttached(args, ctx) {
   return `${name}, characters ${start} to ${end} of ${text.length}${end < text.length ? ` (continue with start=${end})` : ' (end of file)'}:\n${part}`;
 }
 
-const byKey = key => CATALOGUE.find(t => t.key === key) || null;
+// The built-in tools and every tool of the switched-on MCP servers (mcp.js).
+async function catalogue(pool) {
+  const extra = await mcp.entries(pool).catch(() => []);
+  return [...CATALOGUE, ...extra];
+}
 
 // Saved state: { key: { enabled, roles: [], audience: 'user'|'staff'|'developer' } }.
 // Present = installed.
@@ -240,7 +245,7 @@ async function audit(pool, userId, key, action) {
 }
 
 async function change(coreApi, key, body, userId) {
-  if (!byKey(key)) throw new storage.HttpError(404, 'unknown_tool', 'There is no such tool.');
+  if (!(await catalogue(coreApi.pool)).some(t => t.key === key)) throw new storage.HttpError(404, 'unknown_tool', 'There is no such tool.');
   const state = { ...(await getState(coreApi.pool)) };
   const { action } = body || {};
   if (action === 'install') {
@@ -268,7 +273,7 @@ async function change(coreApi, key, body, userId) {
 async function forUser(coreApi, user, level = 'user') {
   const state = await getState(coreApi.pool).catch(() => ({}));
   const roles = await coreApi.getUserRoles(user);
-  return CATALOGUE.filter((t) => {
+  return (await catalogue(coreApi.pool)).filter((t) => {
     const s = state[t.key];
     return s && s.enabled && (!s.roles.length || s.roles.some(r => roles.includes(r))) && safety.allowed(s.audience || 'user', level);
   });
@@ -293,6 +298,6 @@ async function call(available, name, rawArgs, ctx) {
   }
 }
 
-const card = ({ key, name, what, example, sees, risk, needs, status }) => ({ key, name, what, example, sees, risk, needs: needs || null, status: status || 'tested' });
+const card = ({ key, name, what, example, sees, risk, needs, status, mcp: m }) => ({ key, name, what, example, sees, risk, needs: needs || null, status: status || 'tested', mcp: m || null });
 
-module.exports = { CATALOGUE, UNAVAILABLE, getState, change, forUser, call, card };
+module.exports = { CATALOGUE, UNAVAILABLE, catalogue, getState, change, forUser, call, card };
