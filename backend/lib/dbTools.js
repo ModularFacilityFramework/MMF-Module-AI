@@ -22,6 +22,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 const mariadb = require('mariadb');
+const { errorLogger } = require('../config/database');
 
 const MSSQL_PYTHON = '/usr/local/ai-dbtools/venv/bin/python';
 const MSSQL_ALLOWED = /^(select|with)\b/i;
@@ -47,7 +48,11 @@ function getPool(cfg) {
   const key = `${cfg.host}:${cfg.port}:${cfg.user}`;
   if (pool && poolKey === key) return pool;
   if (pool) pool.end().catch(() => {});
-  pool = mariadb.createPool({ ...cfg, connectionLimit: 2, connectTimeout: 5000, acquireTimeout: 8000, bigIntAsNumber: true, dateStrings: true, multipleStatements: false });
+  pool = mariadb.createPool({
+    ...cfg, connectionLimit: 2, minimumIdle: 0, initializationTimeout: 15000, connectTimeout: 5000, acquireTimeout: 8000,
+    bigIntAsNumber: true, dateStrings: true, multipleStatements: false
+  });
+  pool.on('error', errorLogger('read-only MariaDB pool (database tool)'));
   poolKey = key;
   return pool;
 }
