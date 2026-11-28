@@ -19,6 +19,13 @@ module.exports = function register(coreApi) {
   router.use(buildChatRouter(moduleApi));
   router.use(buildSetupRouter(moduleApi));
   cleanup.schedule(moduleApi);
+  // Tool servers named in MODULE_AI_MCP_SERVERS: added once, after start-up,
+  // then tried again every 10 minutes until their default tools are in use.
+  const preload = () => require('./lib/mcp').preload(moduleApi)
+    .then((r) => { if (r.added.length || r.tools.length) console.log(`[ai] tool servers preloaded: ${r.added.join(', ') || '-'}; tools put in use: ${r.tools.length}`); })
+    .catch(err => console.error(`[ai] tool servers could not be preloaded: ${err.message}`));
+  setTimeout(preload, 90000).unref();
+  setInterval(preload, 600000).unref();
   return {
     router,
     moduleId: manifest.id,

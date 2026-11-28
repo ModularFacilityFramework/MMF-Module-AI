@@ -233,3 +233,78 @@ async function overview(pool, { fresh = false } = {}) {
 }
 
 module.exports = { getServers, saveServer, removeServer, setServerEnabled, listTools, entries, overview, toolKey, forget };
+
+// --- servers preloaded from the config ------------------------------------------------
+//
+// MODULE_AI_MCP_SERVERS = "key=Name|address|tool,tool;key=Name|address|tool,..."
+// Each server is added once, the first time the module sees it there, and
+// never again after someone removes it on Setup (the keys already added are
+// kept in ai_settings 'mcp.preloaded'). The optional tool list names the tools
+// put in use when the server is added (a tool matches when its name contains
+// one of the words); they are put in use as soon as the server answers.
+
+function parsePreload(raw) {
+  const out = [];
+  for (const part of String(raw || '').split(';')) {
+    const entry = part.trim();
+    const eq = entry.indexOf('=');
+    if (eq < 1) continue;
+    const key = entry.slice(0, eq).trim();
+    const [name, url, toolList] = entry.slice(eq + 1).split('|').map(x => (x || '').trim());
+    if (!KEY_RE.test(key) || !/^https?:\/\//.test(url || '')) continue;
+    out.push({ key, name: name || key, url, tools: (toolList || '').split(',').map(t => t.trim()).filter(Boolean) });
+  }
+  return out;
+}
+
+let preloading = null;
+
+// Adds the configured servers that were never added before, and puts their
+// default tools in use once each server answers. Safe to call often.
+async function preload(coreApi) {
+  if (preloading) return preloading;
+  preloading = (async () => {
+    const wanted = parsePreload((coreApi.getModuleConfig() || {}).MCP_SERVERS);
+    if (!wanted.length) return { added: [], tools: [] };
+    const pool = coreApi.pool;
+    const done = (await getSetting(pool, 'mcp.preloaded', null)) || { servers: [], tools: [] };
+    const added = [];
+    const installed = [];
+    for (const w of wanted) {
+      if (!done.servers.includes(w.key)) {
+        const servers = await getServers(pool);
+        if (!servers.some(s => s.key === w.key)) {
+          await saveServer(pool, { key: w.key, name: w.name, url: w.url, enabled: true }, null);
+          added.push(w.key);
+        }
+        done.servers.push(w.key);
+        await setSetting(pool, 'mcp.preloaded', done, null);
+      }
+      // default tools: once per server, when it answers and is still there
+      if (w.tools.length && !done.tools.includes(w.key)) {
+        const server = (await getServers(pool)).find(s => s.key === w.key);
+        if (!server) { done.tools.push(w.key); await setSetting(pool, 'mcp.preloaded', done, null); continue; }
+        const list = await listTools(server, { fresh: true });
+        if (list.error || !list.tools.length) continue; // not answering yet: next time
+        const tools = require('./tools'); // lazily: tools -> mcp
+        const state = await tools.getState(pool);
+        // a word that is a tool's whole name matches only that tool
+        const matches = (name, word) => name === word || (name.includes(word) && !list.tools.some(x => x.name === word));
+        for (const t of list.tools) {
+          if (!w.tools.some(word => matches(t.name, word))) continue;
+          const key = toolKey(server.key, t.name);
+          if (state[key]) continue;
+          await tools.change(coreApi, key, { action: 'install' }, null).catch(() => {});
+          installed.push(key);
+        }
+        done.tools.push(w.key);
+        await setSetting(pool, 'mcp.preloaded', done, null);
+      }
+    }
+    return { added, tools: installed };
+  })();
+  try { return await preloading; } finally { preloading = null; }
+}
+
+module.exports.parsePreload = parsePreload;
+module.exports.preload = preload;

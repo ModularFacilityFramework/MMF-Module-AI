@@ -266,7 +266,7 @@ function startAnswer(coreApi, { user, root, chatId, think, limits }) {
           // Every tool use, per answer: the tool and what it was used on (a doc
           // or skill name), never the question, the arguments or the result.
           coreApi.pool.query('INSERT INTO ai_tool_use (answer_id, user_id, level, tool, target, ok, keyword) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [assistantId, user.id, level, String(c.name).slice(0, 40), res.target || null, res.ok ? 1 : 0, keyword]).catch(() => {});
+            [assistantId, user.id, level, tools.logName(c.name), res.target || null, res.ok ? 1 : 0, keyword]).catch(() => {});
           let text = res.text;
           const budget = Math.max(200, Math.floor(room * 2)); // characters; about 3 per token
           if (text.length > budget) text = `${text.slice(0, budget)}\n(cut: no more room)`;

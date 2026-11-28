@@ -257,8 +257,13 @@ async function getState(pool) {
   return s && typeof s === 'object' ? s : {};
 }
 
+// The log tables keep a tool's name in 40 characters; a longer key (a tool
+// server's tool, up to 64) keeps its start and its last 8 characters, which
+// for a long key are its unique hash.
+const logName = key => { const k = String(key); return k.length <= 40 ? k : `${k.slice(0, 31)}~${k.slice(-8)}`; };
+
 async function audit(pool, userId, key, action) {
-  await pool.query('INSERT INTO ai_tool_log (user_id, tool, action) VALUES (?, ?, ?)', [userId, key, action]);
+  await pool.query('INSERT INTO ai_tool_log (user_id, tool, action) VALUES (?, ?, ?)', [userId, logName(key), action]);
 }
 
 async function change(coreApi, key, body, userId) {
@@ -325,4 +330,4 @@ const card = t => ({
   status: t.status || 'tested', mcp: t.mcp || null, kind: kindOf(t), forModel: Boolean(t.definition)
 });
 
-module.exports = { CATALOGUE, UNAVAILABLE, catalogue, getState, change, forUser, call, card, kindOf, levelOf };
+module.exports = { CATALOGUE, UNAVAILABLE, catalogue, getState, change, forUser, call, card, kindOf, levelOf, logName };

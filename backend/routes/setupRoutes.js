@@ -308,6 +308,41 @@ module.exports = function buildSetupRouter(coreApi) {
     });
   }));
 
+  // The "Tool servers" page: each MCP server, whether it answers, its tools and
+  // which of them are in use (installed and switched on).
+  router.get('/setup/tool-servers', ...setupGate, wrap(async (req, res) => {
+    const fresh = req.query.fresh === '1';
+    const [servers, state] = await Promise.all([mcp.getServers(coreApi.pool), tools.getState(coreApi.pool)]);
+    const out = await Promise.all(servers.map(async (s) => {
+      const list = s.enabled ? await mcp.listTools(s, { fresh }) : { tools: [], error: null };
+      const items = list.tools.map((t) => {
+        const key = mcp.toolKey(s.key, t.name);
+        const st = state[key];
+        return {
+          key, name: t.title || t.name, tool: t.name, inUse: Boolean(st && st.enabled),
+          about: String(t.description || '').replace(/\s+/g, ' ').trim().slice(0, 240)
+        };
+      });
+      return {
+        key: s.key, name: s.name, url: s.url, enabled: s.enabled,
+        state: !s.enabled ? 'off' : list.error ? 'error' : 'ok', error: list.error || null,
+        tools: items, toolCount: items.length, inUse: items.filter(i => i.inUse).length
+      };
+    }));
+    res.json({ servers: out, canEdit: await perms.isPolicyUser(coreApi, req.user) });
+  }));
+
+  // Put one tool of a server in use (install, or switch on) or out of use (switch off).
+  router.post('/setup/tool-servers/:server/tools/:tool', ...policyGate, wrap(async (req, res) => {
+    const use = Boolean(req.body && req.body.use);
+    const state = await tools.getState(coreApi.pool);
+    const key = req.params.tool;
+    if (!key.startsWith(`mcp_${req.params.server}_`)) return res.status(400).json({ error: 'This tool is not one of that server\'s.' });
+    if (use) await tools.change(coreApi, key, { action: state[key] ? 'enable' : 'install' }, req.user.id);
+    else if (state[key] && state[key].enabled) await tools.change(coreApi, key, { action: 'disable' }, req.user.id);
+    return res.json({ success: true });
+  }));
+
   // MCP servers (mcp.js): their tools then appear among the tools above.
   router.post('/setup/mcp-servers', ...policyGate, wrap(async (req, res) => {
     res.json({ servers: await mcp.saveServer(coreApi.pool, req.body, req.user.id) });
